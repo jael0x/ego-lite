@@ -44,7 +44,7 @@ Pick whichever fits your flow.
 <a href="https://cdn.ego.app/setup/macos/arm64/egolite.dmg"><img src="https://img.shields.io/badge/⬇%20Apple%20Silicon-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download ego lite for Apple Silicon" /></a>
 <a href="https://cdn.ego.app/setup/macos/x64/egolite.dmg"><img src="https://img.shields.io/badge/⬇%20Intel-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download ego lite for Intel" /></a>
 
-Open the downloaded .dmg and drag ego lite into your Applications folder.
+Double-click to install.
 
 **Or install from your agent CLI**
 
@@ -68,6 +68,9 @@ Your browsing data stays on your device. ego lite only records whether you opted
 
 ## Demo
 
+Introduce ego lite
+https://github.com/user-attachments/assets/f48099f2-00dc-45ac-b3f3-f7f074ff55fa
+
 Find and apply to jobs automatically
 
 https://github.com/user-attachments/assets/e5ef79b7-f8db-4b72-bef9-b2303f62caf3
@@ -80,7 +83,7 @@ https://github.com/user-attachments/assets/ffe7954b-58ee-411e-b35d-ec30c58a08bc
 
 Most tools can automate a browser. The real questions are what browser the agent gets, whether you can keep working at the same time, and whether the tool is built for the agent you already use or a built-in one.
 
-| Capability | ego lite | Browser-Use | Agent Browser (Vercel) | ChatGPT Atlas | Perplexity Comet |
+| Capability | ego lite | Browser-Use | agent-browser (Vercel) | ChatGPT Atlas | Perplexity Comet |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Multitask in parallel | ✓ | — | — | — | — |
 | Reusable skills | ✓ | — | — | — | — |
@@ -98,7 +101,7 @@ Two other categories try to solve the same problem. Browser automation framework
 
 ## Benchmarks
 
-We benchmarked ego lite against Vercel's agent-browser on four complex browser automation tasks. ego lite finished each task up to 2.6× faster, with substantially fewer tokens. The harder the task, the bigger the gap. Check the comparison.
+We benchmarked ego lite against Vercel's agent-browser on four complex browser automation tasks. ego lite finished each task up to 2.5× faster, with substantially fewer tokens. The harder the task, the bigger the gap. Check the comparison.
 
 <div align="center">
 
