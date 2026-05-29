@@ -69,6 +69,7 @@ Your browsing data stays on your device. ego lite only records whether you opted
 ## Demo
 
 Introduce ego lite
+
 https://github.com/user-attachments/assets/f48099f2-00dc-45ac-b3f3-f7f074ff55fa
 
 Find and apply to jobs automatically
