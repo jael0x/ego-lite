@@ -58,7 +58,7 @@ Either way installs the browser, the `ego-browser` helper, and writes the skill 
 In your agent CLI, type `/ego-browser` followed by a space, then describe what you want in plain language:
 
 ```
-/ego-browser follow @ego_agent on x.com for me
+ego-browser follow @ego_agent on x.com for me
 ```
 
 The agent picks up the `ego-browser` skill, opens the page in its own Space, reads a Snapshot, acts on the page, and reports back, all while your own tabs stay untouched.
