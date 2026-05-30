@@ -121,8 +121,6 @@ Tutorials, the full tool reference, and integration guides live at [lite.ego.app
 
 ## Star History
 
-## Star History
-
 <a href="https://www.star-history.com/?repos=citrolabs%2Fego-lite&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=citrolabs/ego-lite&type=date&theme=dark&legend=top-left" />
