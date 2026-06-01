@@ -45,12 +45,6 @@ Pick whichever fits your flow.
 
 Double-click to install.
 
-**Or install from your agent CLI**
-
-```bash
-curl -fsSL https://lite.ego.app/install.sh | sh
-```
-
 Either way installs the browser, the `ego-browser` helper, and writes the skill into every agent CLI on your machine. On first launch, ego lite asks one question, whether to migrate your Chrome data. Say yes and your agent inherits your existing logins, cookies, extensions, and bookmarks.
 
 ### 2. Run your first task
