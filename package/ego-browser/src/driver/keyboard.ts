@@ -1,5 +1,5 @@
 import { cdp } from "../cdp-eval.js";
-import { resolveHandle, resolveAndCall } from "./element-ops.js";
+import { withHandle, resolveAndCall } from "./element-ops.js";
 import { waitForElement } from "./waits.js";
 
 type FillInputOptions = {
@@ -74,28 +74,29 @@ export async function fillInput(selector, text, options: FillInputOptions = {}) 
   if (timeout > 0 && !await waitForElement(selector, { timeout })) {
     throw new Error(`fillInput: element not found: ${JSON.stringify(selector)}`);
   }
-  const { objectId, sessionId } = await resolveHandle(selector);
-  await cdp("Runtime.callFunctionOn", {
-    functionDeclaration: "function(){this.focus(); if(typeof this.select==='function') this.select();}",
-    objectId,
-    returnByValue: true,
-    awaitPromise: false
-  }, sessionId);
-  if (clearFirst) {
+  await withHandle(selector, async ({ objectId, sessionId }) => {
     await cdp("Runtime.callFunctionOn", {
-      functionDeclaration: "function(){this.value=''; this.dispatchEvent(new Event('input',{bubbles:true}));}",
+      functionDeclaration: "function(){this.focus(); if(typeof this.select==='function') this.select();}",
       objectId,
       returnByValue: true,
       awaitPromise: false
     }, sessionId);
-  }
-  await cdp("Input.insertText", { text }, sessionId);
-  await cdp("Runtime.callFunctionOn", {
-    functionDeclaration: "function(){this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true}));}",
-    objectId,
-    returnByValue: true,
-    awaitPromise: false
-  }, sessionId);
+    if (clearFirst) {
+      await cdp("Runtime.callFunctionOn", {
+        functionDeclaration: "function(){this.value=''; this.dispatchEvent(new Event('input',{bubbles:true}));}",
+        objectId,
+        returnByValue: true,
+        awaitPromise: false
+      }, sessionId);
+    }
+    await cdp("Input.insertText", { text }, sessionId);
+    await cdp("Runtime.callFunctionOn", {
+      functionDeclaration: "function(){this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true}));}",
+      objectId,
+      returnByValue: true,
+      awaitPromise: false
+    }, sessionId);
+  });
 }
 
 /**
@@ -107,12 +108,10 @@ export async function fillInput(selector, text, options: FillInputOptions = {}) 
  * @returns {Promise<void>}
  */
 export async function dispatchKey(selector, key = "Enter", event = "keypress") {
-  const keyCodes = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, " ": 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
-  const keyCode = keyCodes[key] || (key.length === 1 ? key.codePointAt(0) : 0);
-  const { code } = keyDefinition(key);
+  const { vk, code } = keyDefinition(key);
   await resolveAndCall(
     selector,
     "function(keyCode, key, code, event){this.focus(); this.dispatchEvent(new KeyboardEvent(event,{key,code,keyCode,which:keyCode,bubbles:true}));}",
-    [keyCode, key, code, event]
+    [vk, key, code, event]
   );
 }

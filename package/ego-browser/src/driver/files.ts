@@ -1,5 +1,5 @@
 import { cdp } from "../cdp-eval.js";
-import { resolveHandle } from "./element-ops.js";
+import { withHandle } from "./element-ops.js";
 
 /**
  * Set files on a file input.
@@ -9,6 +9,7 @@ import { resolveHandle } from "./element-ops.js";
  */
 export async function uploadFile(selector, path) {
   const files = Array.isArray(path) ? path : [path];
-  const { objectId, sessionId } = await resolveHandle(selector);
-  await cdp("DOM.setFileInputFiles", { files, objectId }, sessionId);
+  await withHandle(selector, async ({ objectId, sessionId }) => {
+    await cdp("DOM.setFileInputFiles", { files, objectId }, sessionId);
+  });
 }
