@@ -64,6 +64,8 @@ await completeTaskSpace(name, { keep: true })   // keep the page for the user
 
 `name` should reflect the task's intent (e.g. `'search github issues'`); don't use literal placeholders.
 
+Keep loose awareness of how many tabs are open — a quick `(await listTabs()).length` is enough; there's no need to spend a dedicated round just to check. When scratch tabs (search-result pages, cross-check pages, and other one-off pages) pile up, close them as you go rather than letting them all accumulate for the end. When finishing with `{ keep: true }` to leave pages for the user, clear out the remaining scratch tabs so only the pages worth showing stay open. Close a single tab with `await cdp('Target.closeTarget', { targetId })` (`targetId` comes from `listTabs()` or an `openOrReuseTab` return value).
+
 
 ### Control handoff
 
