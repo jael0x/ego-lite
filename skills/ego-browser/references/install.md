@@ -6,16 +6,6 @@ The ego-browser skill depends on the ego lite browser: the `ego-browser` command
 
 ego lite website: https://lite.ego.app/
 
-## Before installing: confirm with the user first
-
-Before doing anything, explain the situation to the user and get their consent:
-
-1. Tell the user: ego lite isn't installed in the current environment, so it has to be installed before ego-browser can be used.
-2. Ask the user to confirm whether to install now.
-3. Remind the user: after the install, they need to open ego lite and go through onboarding once, choosing to import data (bookmarks, login state, etc.) from Chrome or another browser as needed; onboarding also registers the `ego-browser` command on their PATH.
-
-Continue only after the user agrees.
-
 ## Install steps (macOS only)
 
 The install script lives at `scripts/install.sh` in this skill and supports macOS only. It will:
@@ -23,7 +13,7 @@ The install script lives at `scripts/install.sh` in this skill and supports macO
 - Download the ego lite installer (a DMG) for your CPU architecture (arm64 / x64).
 - Install `ego lite.app` to `/Applications` (falling back to `~/Applications` when needed).
 - Strip the quarantine attribute to keep Gatekeeper from blocking the first launch.
-- Locate the `ego-browser` command bundled inside the app and start onboarding.
+- After installing, launch the `ego lite` app.
 
 Run the script (use the script's actual path under this skill's directory):
 
@@ -31,14 +21,14 @@ Run the script (use the script's actual path under this skill's directory):
 sh skills/ego-browser/scripts/install.sh
 ```
 
-When run with no arguments, the script goes straight to onboarding. If ego lite is already installed, the script skips the download and proceeds directly to onboarding.
+After installing, the script opens the ego lite app directly. If ego lite is already installed, the script skips the download and opens the app directly.
 
-The user then completes onboarding in the ego lite app:
+After the script opens the ego lite app, the user completes the first-run onboarding in the app:
 
 - Choose to import data from Chrome or another browser as needed.
 - Onboarding registers the `ego-browser` command on the PATH (usually under `~/.local/bin`).
 
-Onboarding is a step the user completes in the GUI. After the script launches onboarding, wait for the user to confirm they've finished before continuing.
+Onboarding is a step the user completes in the GUI. After the script opens ego lite, wait for the user to confirm they've finished onboarding before continuing.
 
 ## After installing: confirm `ego-browser` is available
 
