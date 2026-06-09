@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { state } from "../state.js";
 import { cdp, js } from "../cdp-eval.js";
 import { pageInfo } from "./nav.js";
-import { browserEgo, browserSnapshotRefsToRefMap, drainBrowserEvents } from "../browser-runtime.js";
+import { browserEgo, browserSnapshotRefsToRefMap, drainBrowserEvents, ensureSession, isBrowserRuntime, pendingDialog } from "../browser-runtime.js";
 import { resolveElementCenter } from "../element-resolver.js";
 import { withHandle } from "./element-ops.js";
 import { browserRefMap, ensureRefMapForRef, registerSnapshotForRefRefresh } from "../ref-state.js";
@@ -92,19 +92,27 @@ export async function captureScreenshot(path = join(tmpdir(), "ego-browser-shot.
       params.clip = { ...options.clip };
     }
   } else {
-    const dpr = Number(await js("window.devicePixelRatio")) || 1;
-    const cssScale = 1 / dpr;
-    if (options.clip) {
-      params.clip = { scale: cssScale, ...options.clip };
-    } else {
-      const info = await pageInfo();
-      params.clip = {
-        x: 0,
-        y: 0,
-        width: full ? info.pw : info.w,
-        height: full ? info.ph : info.h,
-        scale: cssScale
-      };
+    if (isBrowserRuntime()) {
+      await ensureSession();
+    }
+    if (!pendingDialog()) {
+      const dpr = Number(await js("window.devicePixelRatio")) || 1;
+      const cssScale = 1 / dpr;
+      if (options.clip) {
+        params.clip = { scale: cssScale, ...options.clip };
+      } else {
+        const info = await pageInfo();
+        if ("dialog" in info) {
+          return captureScreenshot(path, { ...options, raw: true });
+        }
+        params.clip = {
+          x: 0,
+          y: 0,
+          width: full ? info.pw : info.w,
+          height: full ? info.ph : info.h,
+          scale: cssScale
+        };
+      }
     }
   }
   const result = await cdp("Page.captureScreenshot", params);

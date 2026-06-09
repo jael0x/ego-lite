@@ -1,4 +1,4 @@
-import { browserEgo, invalidateSession, setPreferredTarget } from "../browser-runtime.js";
+import { browserEgo, ensureSession, invalidateSession, isBrowserRuntime, pendingDialog, setPreferredTarget } from "../browser-runtime.js";
 import { cdp, js } from "../cdp-eval.js";
 import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
@@ -59,9 +59,16 @@ export async function gotoAndWait(url: string, options: GotoAndWaitOptions = {})
 
 /**
  * Read basic state for the current page.
- * @returns {Promise<{url:string,title:string,w:number,h:number,sx:number,sy:number,pw:number,ph:number}>}
+ * @returns {Promise<{url:string,title:string,w:number,h:number,sx:number,sy:number,pw:number,ph:number}|{dialog:object}>}
  */
 export async function pageInfo() {
+  if (isBrowserRuntime()) {
+    await ensureSession();
+    const dialog = pendingDialog();
+    if (dialog) {
+      return { dialog };
+    }
+  }
   const expression = "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
   return JSON.parse(await js(expression));
 }

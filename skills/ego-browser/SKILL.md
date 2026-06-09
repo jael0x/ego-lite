@@ -41,7 +41,8 @@ The heredoc body runs in a Node.js process with direct access to all ego-browser
 
 Notes:
 - `cliLog(value)` — prints to the terminal; it is the only output mechanism inside a heredoc, and all final results must go through it.
-- `pageInfo()` — returns the current tab's `url`, `title`, and other basic metadata.
+- `pageInfo()` — returns the current tab's `url`, `title`, and other basic metadata; if a native browser dialog is open, returns `{ dialog: ... }`.
+- If `pageInfo()` returns `{ dialog: ... }`, handle it with `cdp('Page.handleJavaScriptDialog', { accept: true })` or `accept: false` before running page JavaScript.
 - `ensureRealTab()` — ensures a real tab exists (a freshly created task space may have none).
 - `drainEvents()` — consumes and returns the async event queue produced by the page (navigation events, network events, etc.).
 - `serverFetch(url, options)` — issues a request from Node and returns the response body.
