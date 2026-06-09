@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  completeTaskSpace,
   newTaskSpace,
   helperContext,
   listTaskSpaces,
@@ -110,7 +111,7 @@ test("switchTaskSpace selects a matching task space", async () => {
       ownership: "agent"
     });
   });
-  assert.deepEqual(calls, [["useTaskSpace", "checkout-flow"]]);
+  assert.deepEqual(calls, [["useTaskSpace", 7]]);
 });
 
 test("switchTaskSpace rejects non-agent-owned task spaces", async () => {
@@ -118,7 +119,7 @@ test("switchTaskSpace rejects non-agent-owned task spaces", async () => {
     async listTaskSpaces() {
       return {
         taskSpaces: [
-          { taskId: "checkout-flow", id: "checkout-flow", name: "checkout-flow", ownership: "user" }
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "user" }
         ]
       };
     },
@@ -136,7 +137,7 @@ test("newTaskSpace creates and selects an agent task space", async () => {
   await withEgo({
     async createTaskSpace(name) {
       calls.push(["createTaskSpace", name]);
-      return { taskId: name, id: name, name, ownership: "agent" };
+      return { taskId: name, id: 7, name, ownership: "agent" };
     },
     useTaskSpace(taskId) {
       calls.push(["useTaskSpace", taskId]);
@@ -145,15 +146,42 @@ test("newTaskSpace creates and selects an agent task space", async () => {
   }, async () => {
     assert.deepEqual(await newTaskSpace("checkout-flow"), {
       taskId: "checkout-flow",
-      id: "checkout-flow",
+      id: 7,
       name: "checkout-flow",
       ownership: "agent"
     });
   });
   assert.deepEqual(calls, [
     ["createTaskSpace", "checkout-flow"],
-    ["useTaskSpace", "checkout-flow"]
+    ["useTaskSpace", 7]
   ]);
+});
+
+test("newTaskSpace rejects results without a numeric id", async () => {
+  const calls = [];
+  await withEgo({
+    async createTaskSpace(name) {
+      calls.push(["createTaskSpace", name]);
+      return { taskId: name, id: name, name };
+    },
+    async listTaskSpaces() {
+      calls.push(["listTaskSpaces"]);
+      return {
+        taskSpaces: [
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "agent" }
+        ]
+      };
+    },
+    useTaskSpace(id) {
+      calls.push(["useTaskSpace", id]);
+    }
+  }, async () => {
+    await assert.rejects(
+      () => newTaskSpace("checkout-flow"),
+      /newTaskSpace requires a numeric task space id/
+    );
+  });
+  assert.deepEqual(calls, [["createTaskSpace", "checkout-flow"]]);
 });
 
 test("newTaskSpace throws on binding error objects", async () => {
@@ -177,7 +205,7 @@ test("useOrCreateTaskSpace reuses existing agent-owned spaces", async () => {
       calls.push(["listTaskSpaces"]);
       return {
         taskSpaces: [
-          { taskId: "checkout-flow", id: "checkout-flow", name: "checkout-flow", ownership: "agent" }
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "agent" }
         ]
       };
     },
@@ -187,23 +215,23 @@ test("useOrCreateTaskSpace reuses existing agent-owned spaces", async () => {
     },
     async createTaskSpace(name) {
       calls.push(["createTaskSpace", name]);
-      return { taskId: name, id: name, name, ownership: "agent" };
+      return { taskId: name, id: 8, name, ownership: "agent" };
     },
-    async claimTaskSpace(name) {
-      calls.push(["claimTaskSpace", name]);
-      return { taskId: name, id: name, name, ownership: "agent" };
+    async claimTaskSpace(id, name) {
+      calls.push(["claimTaskSpace", id, name]);
+      return { taskId: name, id, name, ownership: "agent" };
     }
   }, async () => {
     assert.deepEqual(await useOrCreateTaskSpace("checkout-flow"), {
       taskId: "checkout-flow",
-      id: "checkout-flow",
+      id: 7,
       name: "checkout-flow",
       ownership: "agent"
     });
   });
   assert.deepEqual(calls, [
     ["listTaskSpaces"],
-    ["useTaskSpace", "checkout-flow"]
+    ["useTaskSpace", 7]
   ]);
 });
 
@@ -214,13 +242,13 @@ test("useOrCreateTaskSpace claims existing user-owned spaces", async () => {
       calls.push(["listTaskSpaces"]);
       return {
         taskSpaces: [
-          { taskId: "checkout-flow", id: "checkout-flow", name: "checkout-flow", ownership: "user" }
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "user" }
         ]
       };
     },
-    async claimTaskSpace(name) {
-      calls.push(["claimTaskSpace", name]);
-      return { taskId: name, id: name, name, ownership: "agent" };
+    async claimTaskSpace(id, name) {
+      calls.push(["claimTaskSpace", id, name]);
+      return { taskId: name, id, name, ownership: "agent" };
     },
     useTaskSpace(taskId) {
       calls.push(["useTaskSpace", taskId]);
@@ -229,15 +257,15 @@ test("useOrCreateTaskSpace claims existing user-owned spaces", async () => {
   }, async () => {
     assert.deepEqual(await useOrCreateTaskSpace("checkout-flow"), {
       taskId: "checkout-flow",
-      id: "checkout-flow",
+      id: 7,
       name: "checkout-flow",
       ownership: "agent"
     });
   });
   assert.deepEqual(calls, [
     ["listTaskSpaces"],
-    ["claimTaskSpace", "checkout-flow"],
-    ["useTaskSpace", "checkout-flow"]
+    ["claimTaskSpace", 7, "checkout-flow"],
+    ["useTaskSpace", 7]
   ]);
 });
 
@@ -250,7 +278,7 @@ test("useOrCreateTaskSpace creates missing spaces", async () => {
     },
     async createTaskSpace(name) {
       calls.push(["createTaskSpace", name]);
-      return { taskId: name, id: name, name, ownership: "agent" };
+      return { taskId: name, id: 7, name, ownership: "agent" };
     },
     useTaskSpace(taskId) {
       calls.push(["useTaskSpace", taskId]);
@@ -259,7 +287,7 @@ test("useOrCreateTaskSpace creates missing spaces", async () => {
   }, async () => {
     assert.deepEqual(await useOrCreateTaskSpace("checkout-flow"), {
       taskId: "checkout-flow",
-      id: "checkout-flow",
+      id: 7,
       name: "checkout-flow",
       ownership: "agent"
     });
@@ -267,7 +295,86 @@ test("useOrCreateTaskSpace creates missing spaces", async () => {
   assert.deepEqual(calls, [
     ["listTaskSpaces"],
     ["createTaskSpace", "checkout-flow"],
-    ["useTaskSpace", "checkout-flow"]
+    ["useTaskSpace", 7]
+  ]);
+});
+
+test("useOrCreateTaskSpace resolves string names before numeric id strings", async () => {
+  const calls = [];
+  await withEgo({
+    async listTaskSpaces() {
+      calls.push(["listTaskSpaces"]);
+      return {
+        taskSpaces: [
+          { taskId: "plain-seven", id: 7, name: "plain-seven", ownership: "agent" },
+          { taskId: "7", id: 8, name: "7", ownership: "agent" }
+        ]
+      };
+    },
+    useTaskSpace(id) {
+      calls.push(["useTaskSpace", id]);
+      return id;
+    }
+  }, async () => {
+    assert.deepEqual(await useOrCreateTaskSpace("7"), {
+      taskId: "7",
+      id: 8,
+      name: "7",
+      ownership: "agent"
+    });
+  });
+  assert.deepEqual(calls, [
+    ["listTaskSpaces"],
+    ["useTaskSpace", 8]
+  ]);
+});
+
+test("useOrCreateTaskSpace rejects missing numeric ids instead of creating", async () => {
+  const calls = [];
+  await withEgo({
+    async listTaskSpaces() {
+      calls.push(["listTaskSpaces"]);
+      return { taskSpaces: [] };
+    },
+    async createTaskSpace(name) {
+      calls.push(["createTaskSpace", name]);
+      return { taskId: String(name), id: 7, name: String(name), ownership: "agent" };
+    }
+  }, async () => {
+    await assert.rejects(
+      () => useOrCreateTaskSpace(7),
+      /task space not found: 7/
+    );
+  });
+  assert.deepEqual(calls, [["listTaskSpaces"]]);
+});
+
+test("completeTaskSpace selects by numeric id before completing", async () => {
+  const calls = [];
+  await withEgo({
+    async listTaskSpaces() {
+      calls.push(["listTaskSpaces"]);
+      return {
+        taskSpaces: [
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "agent" }
+        ]
+      };
+    },
+    useTaskSpace(id) {
+      calls.push(["useTaskSpace", id]);
+      return id;
+    },
+    async completeTaskSpace() {
+      calls.push(["completeTaskSpace"]);
+      return "7 task space completed.";
+    }
+  }, async () => {
+    await completeTaskSpace("checkout-flow", { keep: true });
+  });
+  assert.deepEqual(calls, [
+    ["listTaskSpaces"],
+    ["useTaskSpace", 7],
+    ["completeTaskSpace"]
   ]);
 });
 
@@ -276,7 +383,7 @@ test("useOrCreateTaskSpace rejects unknown ownership", async () => {
     async listTaskSpaces() {
       return {
         taskSpaces: [
-          { taskId: "checkout-flow", id: "checkout-flow", name: "checkout-flow", ownership: "shared" }
+          { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "shared" }
         ]
       };
     }
