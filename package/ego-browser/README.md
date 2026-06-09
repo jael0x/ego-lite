@@ -68,7 +68,7 @@ src/
     pointer.ts           click, hover, drag, scroll, scrollBy
     observe.ts           snapshot, captureScreenshot, elementCenter
     keyboard.ts          typeText, pressKey, fillInput, dispatchKey
-    nav.ts               tabs, gotoUrl, openOrReuseTab
+    nav.ts               tabs, gotoUrl, openOrReuseTab, closeTab
     load.ts              waitForLoad and load orchestration
     waits.ts             waitForElement, waitForNetworkIdle, wait
     files.ts             uploadFile

@@ -30,8 +30,8 @@ export {
   listTabs,
   currentTab,
   switchTab,
-  newTab,
   openOrReuseTab,
+  closeTab,
   gotoAndWait,
   ensureRealTab,
   iframeTarget
@@ -420,10 +420,11 @@ export async function learnContext(url = undefined) {
 }
 
 export function helperContext(extra: any = {}) {
+  const { newTab: _newTab, ...publicNav } = nav;
   const all = {
     ...pointer,
     ...keyboard,
-    ...nav,
+    ...publicNav,
     ...observe,
     ...waits,
     ...files,

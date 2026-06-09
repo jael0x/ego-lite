@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { browserCdp, invalidateSession, pendingDialog } from "../../dist/src/browser-runtime.js";
-import { listTabs, newTab, pageInfo } from "../../dist/src/driver/nav.js";
+import { listTabs, newTab, pageInfo, closeTab } from "../../dist/src/driver/nav.js";
+import { setOverrides, state } from "../../dist/src/state.js";
 
 function withEgo(ego, fn) {
   const previous = globalThis.ego;
@@ -108,6 +109,69 @@ test("newTab throws when the binding returns no targetId", async () => {
       /newTab returned no targetId/
     );
   });
+});
+
+test("closeTab closes an explicit target and returns its id", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return { success: true };
+    }
+  });
+  try {
+    assert.equal(await closeTab("target-2"), "target-2");
+  } finally {
+    restore();
+  }
+
+  assert.deepEqual(calls, [
+    {
+      method: "Target.closeTarget",
+      params: { targetId: "target-2" },
+      sessionId: undefined
+    }
+  ]);
+});
+
+test("closeTab closes the current tab and invalidates matching session state", async () => {
+  const calls = [];
+  await withEgo({
+    async listTabs() {
+      return {
+        tabs: [
+          { targetId: "target-1", active: true, title: "Example", url: "https://example.com/" }
+        ]
+      };
+    }
+  }, async () => {
+    const restore = setOverrides({
+      cdpOverride(method, params, sessionId) {
+        calls.push({ method, params, sessionId });
+        return { success: true };
+      },
+      sessionId: "session-1",
+      sessionTargetId: "target-1",
+      sessionAt: Date.now(),
+      preferredTargetId: "target-1"
+    });
+    try {
+      assert.equal(await closeTab(), "target-1");
+      assert.equal(state.sessionId, null);
+      assert.equal(state.sessionTargetId, null);
+      assert.equal(state.preferredTargetId, null);
+    } finally {
+      restore();
+    }
+  });
+
+  assert.deepEqual(calls, [
+    {
+      method: "Target.closeTarget",
+      params: { targetId: "target-1" },
+      sessionId: undefined
+    }
+  ]);
 });
 
 test("browser runtime enables Page events and tracks pending native dialogs", async () => {

@@ -1,4 +1,4 @@
-import { browserEgo, ensureSession, invalidateSession, isBrowserRuntime, pendingDialog, setPreferredTarget } from "../browser-runtime.js";
+import { browserEgo, clearPreferredTarget, ensureSession, invalidateSession, isBrowserRuntime, pendingDialog, setPreferredTarget } from "../browser-runtime.js";
 import { cdp, js } from "../cdp-eval.js";
 import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
@@ -31,6 +31,8 @@ type OpenOrReuseTabOptions = {
   timeout?: number;
   settle?: number;
 };
+
+type TabTarget = string | { targetId: string };
 
 /**
  * Navigate the current tab to a URL using CDP Page.navigate.
@@ -156,6 +158,26 @@ export async function openOrReuseTab(url: string, options: OpenOrReuseTabOptions
     await state.sleep(settle * 1000);
   }
   return { targetId, url, title: "", active: true, reused: false };
+}
+
+/**
+ * Close a browser tab by target id, tab object, or the current tab when omitted.
+ * @param {string|{targetId:string}} [target] Target id or tab-like object. Defaults to the current tab.
+ * @returns {Promise<string>} Closed target id.
+ */
+export async function closeTab(target: TabTarget | undefined = undefined) {
+  const targetId = target === undefined
+    ? (await currentTab()).targetId
+    : typeof target === "object" ? target.targetId : target;
+  if (!targetId) {
+    throw new Error("closeTab requires a targetId");
+  }
+  await cdp("Target.closeTarget", { targetId });
+  invalidateSession();
+  if (state.preferredTargetId === targetId) {
+    clearPreferredTarget();
+  }
+  return targetId;
 }
 
 /**
