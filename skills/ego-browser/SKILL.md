@@ -63,12 +63,7 @@ Use a descriptive string name for a new task space. Prefer using the numeric `id
 
 To continue work from an existing user-owned task space, use `listTaskSpaces()` to find the space, call `useOrCreateTaskSpace(id)` to claim it, then use `listTabs()` and `switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `takeOverTaskSpace(nameOrId)`.
 
-**`completeTaskSpace(nameOrId, { keep })` must occupy its own dedicated final heredoc, and run only after a prior heredoc's output has confirmed the task is genuinely done.** `keep` is required: pass `false` to close the space, or `true` to complete the space and leave the page visible to the user:
-
-```js
-await completeTaskSpace(nameOrId, { keep: false })  // close the space
-await completeTaskSpace(nameOrId, { keep: true })   // keep the page for the user
-```
+**`completeTaskSpace(nameOrId, { keep })` must occupy its own dedicated final heredoc, and run only after a prior heredoc's output has confirmed the task is genuinely done.** `keep` is required: pass `false` to close the space, or `true` to complete the space and leave the page visible to the user.
 
 When passing a string that may create a new task space, the string should reflect the task's intent (e.g. `'search github issues'`); don't use literal placeholders.
 
