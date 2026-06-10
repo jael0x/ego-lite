@@ -156,21 +156,24 @@ const data = await js(String.raw`(() => {
 
 ## Recommended workflow
 
-Start with snapshotText + ref/loc when possible — it preserves semantic structure and avoids the brittleness of pixel coordinates.
+ego-browser has three main workflows. Pick the workflow that fits the page and task before acting. In most cases, use the semantic workflow first.
 
-1. Reuse or create a task space: `const task = await useOrCreateTaskSpace(name)`.
-2. Open or switch pages: prefer `openOrReuseTab(url, { wait: true })`; use `gotoAndWait(url, { timeout, settle })` to navigate within the current tab.
-3. Observe the page: call `snapshotText()` to get a full-page semantic tree annotated with `[ref=N, loc=..., url=...]`. Refs are auto-registered in refMap, so you can immediately do `click('@N')` / `fillInput('@N', ...)`, or use the `loc=...` value in direct DOM logic.
-4. Act or extract data: if the logic can be done in the DOM in one shot, wrap it in a browser-side closure and return once.
-5. After a meaningful click, input, or navigation, observe again with `snapshotText()`, `pageInfo()`, or `captureScreenshot()` before assuming the action succeeded.
-6. Output the final result: use `cliLog(...)`.
+1. **Semantic workflow: `snapshotText()` + refs / locators** — default for most pages with normal text, links, buttons, forms, tables, and lists.
+   - Reuse or create a task space: `const task = await useOrCreateTaskSpace(name)`.
+   - Open or switch pages with `openOrReuseTab(url, { wait: true })`; use `gotoAndWait(url, { timeout, settle })` only when navigating inside the current tab.
+   - Observe with `snapshotText()` to get a full-page semantic tree annotated with `[ref=N, loc=..., url=...]`.
+   - Act with `click('@N')`, `fillInput('@N', ...)`, or stable `loc=...` values. Use direct DOM logic only when it is simpler than helper calls.
+   - After meaningful clicks, input, or navigation, observe again with `snapshotText()`, `pageInfo()`, or `captureScreenshot()` before assuming success.
 
-Switch to a different path when it fits better; paths can be combined:
-- **snapshotText + ref/loc** — default when semantic structure, labels, links, and form controls are clear.
-- **captureScreenshot + click([x, y])** — for visual layouts, canvas-like UIs, virtual lists, or pages with incomplete accessibility info.
-- **js / cdp** — for direct DOM extraction, inspecting browser state, or when the observation helpers aren't direct enough.
+2. **Visual workflow: `captureScreenshot()` + coordinate actions** — use when the page is primarily visual, canvas-like, heavily virtualized, or when accessibility / semantic structure is incomplete.
+   - Inspect the screenshot, act with viewport coordinates such as `click([x, y])`, then verify with another screenshot or semantic observation.
+   - Prefer this path for visual menus, map/canvas UIs, drag interactions, and targets that are obvious visually but poor in the DOM/AX tree.
 
-Aim to write one complete `ego-browser nodejs` script that handles navigation, observation, scrolling, extraction, filtering, aggregation, and output in a single pass. Don't use a second local `node` script to post-process the same data.
+3. **Direct DOM / CDP workflow: `js()` / `cdp()`** — use when you need browser state, compact data extraction, custom DOM traversal, or raw browser capabilities.
+   - Keep browser-side logic in one explicit IIFE and return once.
+   - Use `cdp()` for browser protocol operations that helpers do not cover.
+
+These workflows can be combined. A task may take multiple heredoc rounds when the next step depends on fresh page state or user handoff. In each round, write a coherent script that advances the task: observe, act or extract, verify, and report with `cliLog(...)`. Avoid tiny probe scripts, but don't force the whole task into one oversized script.
 
 
 ## Caveats
