@@ -344,7 +344,10 @@ function parseLocatorName(raw) {
 function boxModelCenter(model: any = {}) {
   const content = model.content || [];
   if (content.length < 8) {
-    return { x: 0, y: 0 };
+    // Returning a fake (0,0) here would silently click the viewport corner.
+    // Treat a missing/degenerate box model as "element not ready" so callers
+    // with retry semantics (waitForElement, ref fallback) can poll.
+    throw new ElementResolutionError("Element has no box model (not rendered or zero-sized)", "transient");
   }
   return {
     x: (content[0] + content[2] + content[4] + content[6]) / 4,
