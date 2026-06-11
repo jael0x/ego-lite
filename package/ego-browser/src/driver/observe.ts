@@ -6,7 +6,6 @@ import { cdp, js } from "../cdp-eval.js";
 import { pageInfo } from "./nav.js";
 import { browserEgo, browserSnapshotRefsToRefMap, drainBrowserEvents, ensureSession, isBrowserRuntime, pendingDialog } from "../browser-runtime.js";
 import { resolveElementCenter } from "../element-resolver.js";
-import { withHandle } from "./element-ops.js";
 import { browserRefMap, ensureRefMapForRef, registerSnapshotForRefRefresh } from "../ref-state.js";
 
 type SnapshotOptions = {
@@ -62,25 +61,12 @@ export async function elementCenter(selectorOrRef) {
   return resolveElementCenter({ sendRaw: cdp }, undefined, browserRefMap, selectorOrRef);
 }
 
-export async function fillElement(selectorOrRef, value) {
-  await withHandle(selectorOrRef, async ({ objectId, sessionId }) => {
-    await cdp("Runtime.callFunctionOn", {
-      functionDeclaration: "function() { this.focus(); }",
-      objectId,
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
-    await cdp("Runtime.callFunctionOn", {
-      functionDeclaration: "function() { this.select && this.select(); this.value = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }",
-      objectId,
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
-    await cdp("Input.insertText", { text: String(value) }, sessionId);
-  });
-}
+// Sequence number for default screenshot file names. Combined with the pid it
+// keeps concurrent agent processes (parallel task spaces) from overwriting each
+// other's shots in the shared tmpdir, and successive shots in one run distinct.
+let screenshotSeq = 0;
 
-export async function captureScreenshot(path = join(tmpdir(), "ego-browser-shot.png"), options: CaptureScreenshotOptions = {}) {
+export async function captureScreenshot(path = join(tmpdir(), `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`), options: CaptureScreenshotOptions = {}) {
   const full = options.full ?? false;
   const raw = options.raw ?? false;
   const params: any = {

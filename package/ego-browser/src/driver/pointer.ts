@@ -193,9 +193,32 @@ export async function scroll(x: number | ScrollOptions = 0, y: number | ScrollOp
   };
   try {
     await browserCdp("Input.dispatchMouseEvent", params, undefined, 1000);
-  } catch {
+  } catch (error) {
+    // Degrade to DOM scrolling only when the target genuinely cannot dispatch
+    // wheel events. Everything else (timeouts, "user is controlling", session
+    // loss) propagates — window.scrollBy is NOT equivalent to a real wheel
+    // event (virtualized lists and inner scroll panes ignore window scrolling),
+    // so a silent fallback would hide the failure behind a different behavior.
+    if (!isWheelDispatchUnsupported(error)) {
+      throw error;
+    }
+    if (!hasWarnedAboutWheelFallback) {
+      hasWarnedAboutWheelFallback = true;
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[ego-browser] scroll(): wheel dispatch unsupported on this target (${message}); ` +
+        `falling back to DOM scrollBy(). Wheel-only behaviors (virtualized lists, inner scroll panes) may not trigger.\n`
+      );
+    }
     return scrollBy({ dx: params.deltaX, dy: params.deltaY });
   }
+}
+
+let hasWarnedAboutWheelFallback = false;
+
+function isWheelDispatchUnsupported(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /not (?:supported|implemented)|wasn't found|isn't found|unknown (?:method|command)|method not found/i.test(message);
 }
 
 /**

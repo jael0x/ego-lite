@@ -109,22 +109,14 @@ async function execute(code: string, stdout: WritableLike) {
 
 export async function executionContext(stdout: WritableLike = processStdout) {
   const agentHelpers = await helpers.loadAgentHelpers();
-  const context = publicContext({ ...helpers, ...agentHelpers });
-  context.cliLog = (...args) => {
+  // Single source of truth for the agent-facing surface: the same helperContext()
+  // that installEgoSdk() exposes in the browser runtime, so the CLI and SDK paths
+  // cannot drift apart (and `help` exists in both).
+  const context: Record<string, any> = helpers.helperContext(agentHelpers);
+  context.cliLog = (...args: unknown[]) => {
     write(stdout, `${args.map(formatCliLogValue).join(" ")}\n`);
   };
   return context;
-}
-
-function publicContext(moduleLike: Record<string, any>) {
-  const out: Record<string, any> = {};
-  for (const [name, value] of Object.entries(moduleLike)) {
-    if (name === "__testing" || name.startsWith("_")) {
-      continue;
-    }
-    out[name] = value;
-  }
-  return out;
 }
 
 function readAll(stream: ReadableLike) {

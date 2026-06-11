@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,11 +33,12 @@ export {
   switchTab,
   openOrReuseTab,
   closeTab,
+  gotoUrl,
   gotoAndWait,
   ensureRealTab,
   iframeTarget
 } from "./driver/nav.js";
-export { snapshot, snapshotRaw, snapshotText, captureScreenshot, elementCenter, fillElement, drainEvents } from "./driver/observe.js";
+export { snapshot, snapshotRaw, snapshotText, captureScreenshot, elementCenter, drainEvents } from "./driver/observe.js";
 export { wait, waitForLoad, waitForElement, waitForNetworkIdle } from "./driver/waits.js";
 export { uploadFile } from "./driver/files.js";
 export { browserFetch, serverFetch } from "./http.js";
@@ -53,6 +54,20 @@ export async function listTaskSpaces() {
   }
   return normalizeTaskSpaces(assertNoEgoError(await ego.listTaskSpaces(), "listTaskSpaces"));
 }
+
+/*
+ * Task space ownership policy (`ownership`: "agent" | "user").
+ * What each helper does when the target space is user-owned:
+ *
+ *   switchTaskSpace                     -> throws (agent-owned only)
+ *   useOrCreateTaskSpace                -> claims it (ownership transfers to the agent)
+ *   handOffTaskSpace                    -> skipped, resolves { done: false, skipped: "user-owned" }
+ *   completeTaskSpace { keep: true }    -> skipped, resolves { done: false, skipped: "user-owned" }
+ *   completeTaskSpace { keep: false }   -> claims it, then closes it
+ *   takeOverTaskSpace / waitForAgentControl -> no ownership check (operates as-is)
+ *
+ * Keep this table in sync with the one in skills/ego-browser/SKILL.md.
+ */
 
 /**
  * Select an existing task space by id/name for the current Node invocation.
@@ -144,9 +159,12 @@ async function selectTaskSpaceIfProvided(ego, nameOrId?: string | number, op = "
  * Finish working on a task space. With `{ keep: true }` the page stays open
  * with the agent overlay dismissed so the user can review the result; with
  * `{ keep: false }` the task space is closed entirely.
+ * User-owned spaces: `keep:true` is skipped (the user already has the page) and
+ * resolves `{ done: false, skipped: "user-owned" }`; `keep:false` claims the
+ * space first, then closes it.
  * @param {string|number} nameOrId Task space id or name.
  * @param {{ keep: boolean }} options Required. `keep:true` hands the page to the user; `keep:false` closes the space.
- * @returns {Promise<void>}
+ * @returns {Promise<{done: boolean, skipped?: "user-owned"}>} `{ done: true }` when the space was completed or closed; `{ done: false, skipped: "user-owned" }` when nothing was done.
  */
 export async function completeTaskSpace(nameOrId: string | number, options: { keep: boolean }) {
   if ((typeof nameOrId !== "string" && typeof nameOrId !== "number") || nameOrId === "") {
@@ -165,7 +183,9 @@ export async function completeTaskSpace(nameOrId: string | number, options: { ke
     throw new Error(`task space not found: ${nameOrId}`);
   }
   if (options.keep) {
-    if (match.ownership === "user") return;
+    if (match.ownership === "user") {
+      return { done: false, skipped: "user-owned" as const };
+    }
     await selectTaskSpace(ego, match, "completeTaskSpace");
     if (typeof ego.completeTaskSpace !== "function") {
       throw new Error("completeTaskSpace requires ego.completeTaskSpace");
@@ -182,12 +202,15 @@ export async function completeTaskSpace(nameOrId: string | number, options: { ke
     }
     assertNoEgoError(await ego.closeTaskSpace(), "completeTaskSpace");
   }
+  return { done: true };
 }
 
 /**
  * Hand off a task space back to the user, hiding the agent overlay.
+ * User-owned spaces are skipped (the user already controls them) and resolve
+ * `{ done: false, skipped: "user-owned" }`.
  * @param {string|number} [nameOrId] Task space id or name. If provided, switches to that space first.
- * @returns {Promise<void>}
+ * @returns {Promise<{done: boolean, skipped?: "user-owned"}>} `{ done: true }` when control was handed off; `{ done: false, skipped: "user-owned" }` when nothing was done.
  */
 export async function handOffTaskSpace(nameOrId?: string | number) {
   const ego = globalThis.ego;
@@ -196,10 +219,13 @@ export async function handOffTaskSpace(nameOrId?: string | number) {
   }
   if (nameOrId !== undefined) {
     const match = await findTaskSpace(nameOrId);
-    if (match.ownership === "user") return;
+    if (match.ownership === "user") {
+      return { done: false, skipped: "user-owned" as const };
+    }
     await selectTaskSpace(ego, match, "handOffTaskSpace");
   }
   assertNoEgoError(await ego.handOffTaskSpace(), "handOffTaskSpace");
+  return { done: true };
 }
 
 /**
@@ -268,29 +294,6 @@ export async function waitForAgentControl(nameOrId: string | number, options: { 
     }
     await waits.wait(interval);
   }
-}
-
-/**
- * Navigate the current tab to a URL and include matching site skill hints when enabled.
- * @param {string} url URL to navigate to.
- * @returns {Promise<object>} CDP navigation result, optionally with domain_skills.
- */
-export async function gotoUrl(url) {
-  const result = await nav.gotoUrl(url);
-  if (process.env.EGO_BROWSER_DOMAIN_SKILLS !== "1") {
-    return result;
-  }
-  const host = new URL(url).hostname.replace(/^www\./, "").split(".")[0];
-  const dir = join(state.agentWorkspace(), "domain-skills", host);
-  if (!existsSync(dir)) {
-    return result;
-  }
-  const skills = readdirSync(dir, { recursive: true })
-    .filter((file) => String(file).endsWith(".md"))
-    .map((file) => String(file).split("/").at(-1))
-    .sort()
-    .slice(0, 10);
-  return { ...result, domain_skills: skills };
 }
 
 function normalizeTaskSpaces(raw) {
@@ -411,7 +414,6 @@ export function helperContext(extra: any = {}) {
     js,
     serverFetch,
     browserFetch,
-    gotoUrl,
     siteSkills,
     siteSkillsForUrl,
     runSiteTool,

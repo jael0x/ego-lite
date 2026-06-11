@@ -63,6 +63,19 @@ Use a descriptive string name for a new task space. Prefer using the numeric `id
 
 To continue work from an existing user-owned task space, use `listTaskSpaces()` to find the space, call `useOrCreateTaskSpace(id)` to claim it, then use `listTabs()` and `switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `takeOverTaskSpace(nameOrId)`.
 
+**Ownership policy** — every task space has `ownership: 'agent' | 'user'`; the helpers treat user-owned spaces differently:
+
+| Helper | When the target space is user-owned |
+|---|---|
+| `switchTaskSpace` | throws — agent-owned spaces only |
+| `useOrCreateTaskSpace` | claims it (ownership transfers to the agent) |
+| `handOffTaskSpace` | skipped — resolves `{ done: false, skipped: 'user-owned' }` |
+| `completeTaskSpace(…, { keep: true })` | skipped — resolves `{ done: false, skipped: 'user-owned' }` |
+| `completeTaskSpace(…, { keep: false })` | claims it, then closes it |
+| `takeOverTaskSpace` / `waitForAgentControl` | no ownership check |
+
+`handOffTaskSpace` and `completeTaskSpace` resolve `{ done: true }` when the operation actually happened. Check `done` before telling the user the handoff/cleanup is finished — a `skipped` result usually means you targeted a space that was never yours.
+
 **`completeTaskSpace(nameOrId, { keep })` must occupy its own dedicated final heredoc, and run only after a prior heredoc's output has confirmed the task is genuinely done.** `keep` is required: pass `false` to close the space, or `true` to complete the space and leave the page visible to the user.
 
 When passing a string that may create a new task space, the string should reflect the task's intent (e.g. `'search github issues'`); don't use literal placeholders.

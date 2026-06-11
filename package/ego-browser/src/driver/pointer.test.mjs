@@ -67,13 +67,13 @@ test("scroll defaults to scrolling down (positive deltaY, DOM wheel convention)"
   assert.equal(calls[0].params.deltaX, 0);
 });
 
-test("scroll falls back to DOM scrolling when mouseWheel dispatch fails", async () => {
+test("scroll falls back to DOM scrolling only when wheel dispatch is unsupported", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
       calls.push({ method, params, sessionId });
       if (method === "Input.dispatchMouseEvent") {
-        throw new Error("CDP request timed out: Input.dispatchMouseEvent");
+        throw new Error("'Input.dispatchMouseEvent' wasn't found");
       }
       if (method === "Runtime.evaluate") {
         return { result: { value: { x: 0, y: 450 } } };
@@ -98,4 +98,42 @@ test("scroll falls back to DOM scrolling when mouseWheel dispatch fails", async 
   });
   assert.equal(calls[1].method, "Runtime.evaluate");
   assert.match(calls[1].params.expression, /window\.scrollBy/);
+});
+
+test("scroll propagates wheel dispatch timeouts instead of silently degrading", async () => {
+  // Regression: any error (including timeouts and "user is controlling") used
+  // to silently fall back to window.scrollBy, which is not equivalent to a
+  // real wheel event and masked the original failure.
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method) {
+      calls.push(method);
+      if (method === "Input.dispatchMouseEvent") {
+        throw new Error("CDP request timed out: Input.dispatchMouseEvent");
+      }
+      return {};
+    }
+  });
+  try {
+    await assert.rejects(() => scroll({ dy: 450 }), /timed out/);
+  } finally {
+    restore();
+  }
+  assert.deepEqual(calls, ["Input.dispatchMouseEvent"]);
+});
+
+test("scroll propagates user-control errors from wheel dispatch", async () => {
+  const restore = setOverrides({
+    cdpOverride(method) {
+      if (method === "Input.dispatchMouseEvent") {
+        throw new Error("user is controlling this task space");
+      }
+      return {};
+    }
+  });
+  try {
+    await assert.rejects(() => scroll(), /user is controlling/);
+  } finally {
+    restore();
+  }
 });
