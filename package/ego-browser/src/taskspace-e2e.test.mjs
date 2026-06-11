@@ -180,6 +180,28 @@ test("taskspace e2e exposes newTaskSpace but not claimTaskSpace as a helper", as
   });
 });
 
+test("cli e2e exposes the unified helperContext surface (help present, internals hidden)", async () => {
+  const ego = new FakeEgo();
+  const result = await runTaskspaceScript(ego, `
+    cliLog(JSON.stringify({
+      helpType: typeof help,
+      helpResultType: typeof help("click"),
+      newTabType: typeof newTab,
+      helperContextType: typeof helperContext,
+      loadAgentHelpersType: typeof loadAgentHelpers
+    }));
+  `);
+
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(firstJsonLine(result.stdout), {
+    helpType: "function",
+    helpResultType: "string",
+    newTabType: "undefined",
+    helperContextType: "undefined",
+    loadAgentHelpersType: "undefined"
+  });
+});
+
 test("taskspace e2e rejects explicit use of a user-owned task space", async () => {
   const ego = new FakeEgo([
     { taskId: "checkout-flow", id: 7, name: "checkout-flow", createdBy: "user", ownership: "user" }
