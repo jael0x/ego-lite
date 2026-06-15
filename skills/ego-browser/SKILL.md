@@ -57,7 +57,7 @@ Notes:
 
 A task space is an **isolated browsing context** that ego-browser provides for AI Agents. Each task space has its own set of tabs but **inherits the current user's login state** by default, so Agents can operate on authenticated sites without competing with or disturbing the user's normal browser windows.
 
-A task often takes multiple heredoc rounds to complete. Because the Node.js runtime exits after each heredoc and retains no state, normal working heredocs should start with an explicit call to `useOrCreateTaskSpace(nameOrId)` to reuse the same space — this lets you operate continuously and reuse tabs across rounds. The exception is resuming after a user handoff: when the user says "continue" in chat, start the next heredoc with `takeOverTaskSpace(nameOrId)` instead.
+A task often takes multiple heredoc rounds to complete. Because the Node.js runtime exits after each heredoc and retains no state, normal working heredocs should start with an explicit call to `useOrCreateTaskSpace(nameOrId)` to reuse the same space — this lets you operate continuously and reuse tabs across rounds. The exception is resuming after a handoff: once the user confirms "continue" (through an Ask or in chat), start the next heredoc with `takeOverTaskSpace(nameOrId)` instead.
 
 `nameOrId` can be a task space name, numeric id, or digit-only numeric id string. String values match `name`/`taskId` first, then digit-only strings fall back to numeric id. Number values match existing numeric ids only; if no matching id exists, `useOrCreateTaskSpace` fails instead of creating a new space.
 
@@ -65,7 +65,7 @@ Use a short name for the active user goal when creating a new task space. Keep r
 
 To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await useOrCreateTaskSpace(id)` to claim it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
 
-**Ownership policy** — every task space has `ownership: 'agent' | 'user'`; the helpers treat user-owned spaces differently:
+**Ownership policy** — every task space has `ownership: 'agent' | 'agentDelegatedToUser' | 'user'`; the helpers treat user-owned spaces differently:
 
 | Helper | When the target space is user-owned |
 |---|---|
@@ -87,29 +87,17 @@ Keep loose awareness of how many tabs are open — a quick `(await listTabs()).l
 
 ### Control handoff
 
-Only one side — agent or user — holds control of a task space at any time.
+Only one side — agent or user — holds control of a task space at any time. While the user holds control, any browser operation by the agent fails with a "user is controlling" message — do not retry it; follow the steps below to resume.
 
-**Handing off**: When the task requires user intervention (e.g. login, captcha, manual confirmation), call `await handOffTaskSpace([nameOrId])` to give control to the user. Omitting `nameOrId` uses the currently selected task space; pass `task.id` across heredoc rounds to avoid ambiguity. After handoff, any browser operation by the agent will fail with a "user is controlling" message.
+A "user is controlling" error is a hard stop on the whole task — not an obstacle to route around. It means the user has deliberately taken the browser back, often because your current approach is going wrong. Honoring it *is* the correct outcome here; pushing the goal forward anyway is the failure. The only thing you may do is **ask the user and wait**.
 
-**Regaining control** — two paths:
+**Handing off**: When the task requires user intervention (e.g. login, captcha, manual confirmation), call `await handOffTaskSpace([nameOrId])` to give control to the user, and tell them exactly what to do. Omitting `nameOrId` uses the currently selected task space; pass `task.id` across heredoc rounds to avoid ambiguity.
 
-1. **User says "continue" in chat** → call `await takeOverTaskSpace([nameOrId])` to take back control, then continue. Omitting `nameOrId` uses the currently selected task space. `await takeOverTaskSpace(...)` is idempotent — safe to call even if the user already returned control via GUI.
-2. **User returns via browser GUI** (without chatting) → the agent receives no notification. Use `await waitForAgentControl(nameOrId)` to block until control comes back; once it returns, you can operate directly without calling `await takeOverTaskSpace(...)`.
+**Regaining control**: Take control back *only* after the user explicitly confirms — through an Ask (your harness's button/option prompt, e.g. "Continue" vs "Finish task") or a "continue" message in chat. Then start a new heredoc with `await takeOverTaskSpace([nameOrId])` and resume; if the user chooses to finish, close out with `await completeTaskSpace(nameOrId, { keep })`. Never call `takeOverTaskSpace` on your own to grab control back — it has no ownership check and will seize the browser away from the user.
 
-**Waiting for control handback example**:
+**Unexpected takeover**: The user can take over at any time via the browser GUI — the same effect as the agent calling `handOffTaskSpace`. Do not retry the failed operation and do not auto-takeover; surface the Ask above (Continue / Finish) and resume only when the user picks Continue.
 
-```js
-await handOffTaskSpace(nameOrId)
-cliLog('Please complete the login')
-
-await waitForAgentControl(nameOrId)              // polls every 20s by default, 10-minute timeout
-// await waitForAgentControl(nameOrId, { interval: 10, timeout: 300 })
-// continue working...
-```
-
-If the user action may take a while, exit the heredoc to keep the chat channel open. When the user says "continue" in chat, start a new heredoc with `await takeOverTaskSpace(...)` to resume.
-
-**Unexpected takeover**: The user can take over the task space at any time via the browser GUI — the effect is the same as the agent calling `handOffTaskSpace`. The agent's operations will fail with a "user is controlling" message. Do not retry — inform the user and wait for control to be returned.
+`await waitForAgentControl(nameOrId)` is a read-only blocking poll (it never takes control); use it only to wait inside the current heredoc for a handoff you initiated.
 
 
 ### Scroll / mouse

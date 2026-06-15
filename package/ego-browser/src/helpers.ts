@@ -18,13 +18,26 @@ import {
   loadLearnedContext,
   runNodeSiteTool,
   siteSkillsForUrl as siteSkillsForUrlCore,
-  wrapBrowserTool
+  wrapBrowserTool,
 } from "./learning/index.js";
 
 export { NAME } from "./state.js";
 export { cdp, js } from "./cdp-eval.js";
-export { click, doubleClick, hover, dragMouse, scroll, scrollBy, scrollToBottomUntil } from "./driver/pointer.js";
-export { pressKey, typeText, fillInput, dispatchKey } from "./driver/keyboard.js";
+export {
+  click,
+  doubleClick,
+  hover,
+  dragMouse,
+  scroll,
+  scrollBy,
+  scrollToBottomUntil,
+} from "./driver/pointer.js";
+export {
+  pressKey,
+  typeText,
+  fillInput,
+  dispatchKey,
+} from "./driver/keyboard.js";
 export {
   INTERNAL_URL_PREFIXES,
   pageInfo,
@@ -36,10 +49,22 @@ export {
   gotoUrl,
   gotoAndWait,
   ensureRealTab,
-  iframeTarget
+  iframeTarget,
 } from "./driver/nav.js";
-export { snapshot, snapshotRaw, snapshotText, captureScreenshot, elementCenter, drainEvents } from "./driver/observe.js";
-export { wait, waitForLoad, waitForElement, waitForNetworkIdle } from "./driver/waits.js";
+export {
+  snapshot,
+  snapshotRaw,
+  snapshotText,
+  captureScreenshot,
+  elementCenter,
+  drainEvents,
+} from "./driver/observe.js";
+export {
+  wait,
+  waitForLoad,
+  waitForElement,
+  waitForNetworkIdle,
+} from "./driver/waits.js";
 export { uploadFile } from "./driver/files.js";
 export { browserFetch, serverFetch } from "./http.js";
 
@@ -52,12 +77,18 @@ export async function listTaskSpaces() {
   if (!ego || typeof ego.listTaskSpaces !== "function") {
     throw new Error("listTaskSpaces requires ego.listTaskSpaces");
   }
-  return normalizeTaskSpaces(assertNoEgoError(await ego.listTaskSpaces(), "listTaskSpaces"));
+  return normalizeTaskSpaces(
+    assertNoEgoError(await ego.listTaskSpaces(), "listTaskSpaces"),
+  );
 }
 
 /*
- * Task space ownership policy (`ownership`: "agent" | "user").
- * What each helper does when the target space is user-owned:
+ * Task space ownership policy (`ownership`: "agent" | "agentDelegatedToUser" | "user").
+ * "agent" and "agentDelegatedToUser" are both agent-owned (see isAgentOwned) — the
+ * latter is the agent's own space with control temporarily handed to the user
+ * (handoff or GUI takeover). The user-control boundary is enforced at the native
+ * bridge when real commands run, not here. The rows below describe what each helper
+ * does when the target space is user-owned:
  *
  *   switchTaskSpace                     -> throws (agent-owned only)
  *   useOrCreateTaskSpace                -> claims it (ownership transfers to the agent)
@@ -70,6 +101,18 @@ export async function listTaskSpaces() {
  */
 
 /**
+ * Whether the agent owns the space. "agentDelegatedToUser" is still agent-owned —
+ * the agent created it but control is temporarily with the user (handoff / GUI
+ * takeover). Selecting such a space is fine; the user-control boundary is enforced
+ * separately at the native bridge when real commands run.
+ * @param {string|undefined} ownership
+ * @returns {boolean}
+ */
+function isAgentOwned(ownership) {
+  return ownership === "agent" || ownership === "agentDelegatedToUser";
+}
+
+/**
  * Select an existing task space by id/name for the current Node invocation.
  * @param {string|number} nameOrId Task space id or name.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
@@ -80,8 +123,10 @@ export async function switchTaskSpace(nameOrId) {
     throw new Error("switchTaskSpace requires ego.useTaskSpace");
   }
   const space = await findTaskSpace(nameOrId);
-  if (space.ownership !== "agent") {
-    throw new Error(`switchTaskSpace requires an agent-owned task space, got ownership ${JSON.stringify(space.ownership)}`);
+  if (!isAgentOwned(space.ownership)) {
+    throw new Error(
+      `switchTaskSpace requires an agent-owned task space, got ownership ${JSON.stringify(space.ownership)}`,
+    );
   }
   return selectTaskSpace(ego, space, "switchTaskSpace");
 }
@@ -96,7 +141,9 @@ export async function newTaskSpace(name) {
   if (!ego || typeof ego.createTaskSpace !== "function") {
     throw new Error("newTaskSpace requires ego.createTaskSpace");
   }
-  const created = normalizeTaskSpace(assertNoEgoError(await ego.createTaskSpace(name), "newTaskSpace"));
+  const created = normalizeTaskSpace(
+    assertNoEgoError(await ego.createTaskSpace(name), "newTaskSpace"),
+  );
   if (!created) {
     throw new Error("newTaskSpace returned an invalid task space");
   }
@@ -118,13 +165,15 @@ export async function useOrCreateTaskSpace(nameOrId) {
     }
     return newTaskSpace(nameOrId);
   }
-  if (existing.ownership === "agent") {
+  if (isAgentOwned(existing.ownership)) {
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   if (existing.ownership === "user") {
     return claimTaskSpace(existing, "useOrCreateTaskSpace");
   }
-  throw new Error(`useOrCreateTaskSpace cannot use task space ${JSON.stringify(nameOrId)} with ownership ${JSON.stringify(existing.ownership)}`);
+  throw new Error(
+    `useOrCreateTaskSpace cannot use task space ${JSON.stringify(nameOrId)} with ownership ${JSON.stringify(existing.ownership)}`,
+  );
 }
 
 async function claimTaskSpace(space, op = "claimTaskSpace") {
@@ -133,7 +182,9 @@ async function claimTaskSpace(space, op = "claimTaskSpace") {
     throw new Error(`${op} requires ego.claimTaskSpace`);
   }
   const id = taskSpaceNumericId(space, op);
-  const claimed = normalizeTaskSpace(assertNoEgoError(await ego.claimTaskSpace(id, space.name), op));
+  const claimed = normalizeTaskSpace(
+    assertNoEgoError(await ego.claimTaskSpace(id, space.name), op),
+  );
   if (!claimed) {
     throw new Error(`${op} returned an invalid task space`);
   }
@@ -149,7 +200,11 @@ async function selectTaskSpace(ego, space, op: string) {
   return space;
 }
 
-async function selectTaskSpaceIfProvided(ego, nameOrId?: string | number, op = "taskSpace") {
+async function selectTaskSpaceIfProvided(
+  ego,
+  nameOrId?: string | number,
+  op = "taskSpace",
+) {
   if (nameOrId === undefined) return;
   const match = await findTaskSpace(nameOrId);
   await selectTaskSpace(ego, match, op);
@@ -166,8 +221,14 @@ async function selectTaskSpaceIfProvided(ego, nameOrId?: string | number, op = "
  * @param {{ keep: boolean }} options Required. `keep:true` hands the page to the user; `keep:false` closes the space.
  * @returns {Promise<{done: boolean, skipped?: "user-owned"}>} `{ done: true }` when the space was completed or closed; `{ done: false, skipped: "user-owned" }` when nothing was done.
  */
-export async function completeTaskSpace(nameOrId: string | number, options: { keep: boolean }) {
-  if ((typeof nameOrId !== "string" && typeof nameOrId !== "number") || nameOrId === "") {
+export async function completeTaskSpace(
+  nameOrId: string | number,
+  options: { keep: boolean },
+) {
+  if (
+    (typeof nameOrId !== "string" && typeof nameOrId !== "number") ||
+    nameOrId === ""
+  ) {
     throw new Error("completeTaskSpace requires a task space name or id");
   }
   if (!options || typeof options.keep !== "boolean") {
@@ -275,8 +336,14 @@ async function probeAgentControl() {
  * @param {{ interval?: number, timeout?: number }} [options] interval & timeout in seconds (default 20s / 600s).
  * @returns {Promise<void>}
  */
-export async function waitForAgentControl(nameOrId: string | number, options: { interval?: number; timeout?: number } = {}) {
-  if ((typeof nameOrId !== "string" && typeof nameOrId !== "number") || nameOrId === "") {
+export async function waitForAgentControl(
+  nameOrId: string | number,
+  options: { interval?: number; timeout?: number } = {},
+) {
+  if (
+    (typeof nameOrId !== "string" && typeof nameOrId !== "number") ||
+    nameOrId === ""
+  ) {
     throw new Error("waitForAgentControl requires a task space name or id");
   }
   const ego = globalThis.ego;
@@ -312,13 +379,15 @@ function normalizeTaskSpace(space) {
     ...space,
     taskId,
     id: space?.id ?? taskId,
-    name: space?.name ?? taskId
+    name: space?.name ?? taskId,
   };
 }
 
 function taskSpaceNumericId(space, op: string) {
   if (typeof space?.id !== "number" || !Number.isFinite(space.id)) {
-    throw new Error(`${op} requires a numeric task space id, got ${JSON.stringify(space?.id)}`);
+    throw new Error(
+      `${op} requires a numeric task space id, got ${JSON.stringify(space?.id)}`,
+    );
   }
   return space.id;
 }
@@ -334,7 +403,9 @@ function findMatchingTaskSpace(spaces, nameOrId) {
   if (typeof nameOrId === "number") {
     return spaces.find((space) => space.id === nameOrId);
   }
-  const byName = spaces.find((space) => space.name === nameOrId || space.taskId === nameOrId);
+  const byName = spaces.find(
+    (space) => space.name === nameOrId || space.taskId === nameOrId,
+  );
   if (byName) return byName;
   if (/^\d+$/.test(nameOrId)) {
     const id = Number(nameOrId);
@@ -347,7 +418,7 @@ function findMatchingTaskSpace(spaces, nameOrId) {
 
 export async function siteSkillsForUrl(url) {
   return siteSkillsForUrlCore(url, {
-    agentWorkspace: state.agentWorkspace()
+    agentWorkspace: state.agentWorkspace(),
   });
 }
 
@@ -370,7 +441,7 @@ export async function siteSkills(url = undefined) {
  */
 export async function runSiteTool(siteId, toolName, args: any = {}) {
   return runNodeSiteTool(siteId, toolName, args, helperContext(), {
-    agentWorkspace: state.agentWorkspace()
+    agentWorkspace: state.agentWorkspace(),
   });
 }
 
@@ -383,7 +454,7 @@ export async function runSiteTool(siteId, toolName, args: any = {}) {
  */
 export async function runSiteBrowserTool(siteId, toolName, args: any = {}) {
   const source = await loadBrowserToolSource(siteId, toolName, {
-    agentWorkspace: state.agentWorkspace()
+    agentWorkspace: state.agentWorkspace(),
   });
   return js(wrapBrowserTool(source, args));
 }
@@ -397,7 +468,7 @@ export async function runSiteBrowserTool(siteId, toolName, args: any = {}) {
 export async function learnContext(url = undefined) {
   const targetUrl = url ?? (await nav.pageInfo()).url ?? "";
   return loadLearnedContext(targetUrl, {
-    agentWorkspace: state.agentWorkspace()
+    agentWorkspace: state.agentWorkspace(),
   });
 }
 
@@ -427,7 +498,7 @@ export function helperContext(extra: any = {}) {
     handOffTaskSpace,
     takeOverTaskSpace,
     waitForAgentControl,
-    ...extra
+    ...extra,
   };
   return {
     ...all,
@@ -436,7 +507,7 @@ export function helperContext(extra: any = {}) {
       if (typeof result === "string") return result;
       if (Array.isArray(result)) return result.map(formatHelp).join("\n\n");
       return formatHelp(result);
-    }
+    },
   };
 }
 
