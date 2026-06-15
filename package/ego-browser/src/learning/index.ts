@@ -12,6 +12,7 @@ import {
   urlHostname,
   LearningEntry,
   LearningManifest,
+  LearningOptions,
   LearnedContext,
   LearnedKnowledgeNote,
   LearnedToolSignature,
@@ -23,6 +24,8 @@ import {
   validateLearnings,
   validateSiteSkills,
 } from "./validate-learning-format.js";
+import { ENV, MANIFEST_TOOL_KEY, TOOL_TYPE } from "../constants.js";
+import { SiteSkillError } from "./site-skill-error.js";
 
 export {
   checkDomainLearningExists,
@@ -45,7 +48,7 @@ export {
  */
 export async function loadLearnedContext(
   url: string,
-  options: any = {},
+  options: LearningOptions = {},
 ): Promise<LearnedContext> {
   const matches = await siteSkillsForUrl(url, options);
   if (matches.length === 0) {
@@ -72,7 +75,12 @@ export async function loadLearnedContext(
       let content: string;
       try {
         content = await readFile(notePath, "utf8");
-      } catch {
+      } catch (error) {
+        // Surface the unreadable note instead of silently dropping it.
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(
+          `[ego-browser] skipping note ${notePath}: ${message}\n`,
+        );
         continue;
       }
       const fileName = notePath.split(/[\\/]/).pop() || "";
@@ -85,7 +93,7 @@ export async function loadLearnedContext(
       toolSignatures.push({
         siteId,
         toolName,
-        toolType: "node",
+        toolType: TOOL_TYPE.node,
         description: schema.description || "",
         args: schema.args || {},
         example: `await runSiteTool("${siteId}", "${toolName}", { ... })`,
@@ -97,7 +105,7 @@ export async function loadLearnedContext(
       toolSignatures.push({
         siteId,
         toolName,
-        toolType: "browser",
+        toolType: TOOL_TYPE.browser,
         description: schema.description || "",
         args: schema.args || {},
         example: `await runSiteBrowserTool("${siteId}", "${toolName}", { ... })`,
@@ -128,7 +136,7 @@ function isLearningNotePath(siteDir: string, notePath: string) {
 
 export async function findSiteSkill(
   siteId: string,
-  options: any = {},
+  options: LearningOptions = {},
 ): Promise<{ siteDir: string; manifest: LearningManifest }> {
   const root = options.root || siteSkillsRoot(options.agentWorkspace);
   for (const siteDir of await iterLearningDirs(root)) {
@@ -141,16 +149,17 @@ export async function findSiteSkill(
 }
 
 export async function runNodeSiteTool(
-  siteId,
-  toolName,
-  args: any = {},
-  ctx,
-  options: any = {},
+  siteId: string,
+  toolName: string,
+  args: Record<string, unknown> = {},
+  ctx: unknown,
+  options: LearningOptions = {},
 ) {
   const { siteDir, manifest } = await findSiteSkill(siteId, options);
-  const schema = toolSchemas(manifest, "nodeTools")[toolName];
+  const schema = toolSchemas(manifest, MANIFEST_TOOL_KEY.node)[toolName];
   if (!schema || typeof schema !== "object") {
-    throw new Error(
+    throw new SiteSkillError(
+      "TOOL_NOT_DECLARED",
       `Node tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`,
     );
   }
@@ -160,13 +169,15 @@ export async function runNodeSiteTool(
   );
   const callableName = schema.callable;
   if (typeof callableName !== "string" || !callableName.trim()) {
-    throw new Error(
+    throw new SiteSkillError(
+      "TOOL_CALLABLE_MISSING",
       `Node tool ${JSON.stringify(toolName)} must declare a callable`,
     );
   }
   const tool = module[callableName];
   if (typeof tool !== "function") {
-    throw new Error(
+    throw new SiteSkillError(
+      "TOOL_CALLABLE_NOT_FOUND",
       `site skill ${JSON.stringify(siteId)} is missing Node callable ${JSON.stringify(callableName)}`,
     );
   }
@@ -174,14 +185,15 @@ export async function runNodeSiteTool(
 }
 
 export async function loadBrowserToolSource(
-  siteId,
-  toolName,
-  options: any = {},
+  siteId: string,
+  toolName: string,
+  options: LearningOptions = {},
 ) {
   const { siteDir, manifest } = await findSiteSkill(siteId, options);
-  const schema = toolSchemas(manifest, "browserTools")[toolName];
+  const schema = toolSchemas(manifest, MANIFEST_TOOL_KEY.browser)[toolName];
   if (!schema || typeof schema !== "object") {
-    throw new Error(
+    throw new SiteSkillError(
+      "TOOL_NOT_DECLARED",
       `browser tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`,
     );
   }
@@ -189,47 +201,72 @@ export async function loadBrowserToolSource(
   return readFile(toolPath, "utf8");
 }
 
-export function wrapBrowserTool(source, args: any = {}) {
+export function wrapBrowserTool(
+  source: string,
+  args: Record<string, unknown> = {},
+) {
   return `(async () => { const __egoBrowserTool = ${source}; return await __egoBrowserTool(${JSON.stringify(args || {})}); })()`;
 }
 
 export { learningEntry };
 
-function siteSkillNotFoundError(siteId, searchedRoot) {
-  const workspace = process.env.EGO_BROWSER_AGENT_WORKSPACE || "unset";
+function siteSkillNotFoundError(siteId: string, searchedRoot: string) {
+  const workspace = process.env[ENV.agentWorkspace] || "unset";
   const lines = [
     `site skill not found: ${JSON.stringify(siteId)}`,
     `  searched: ${searchedRoot}`,
     `  EGO_BROWSER_AGENT_WORKSPACE: ${workspace}`,
     `  hint: ensure your write path begins with the searched root above`,
   ];
-  return new Error(lines.join("\n"));
+  return new SiteSkillError("SITE_SKILL_NOT_FOUND", lines.join("\n"));
 }
 
-function toolSchemas(manifest, key) {
+function toolSchemas(
+  manifest: LearningManifest,
+  key: typeof MANIFEST_TOOL_KEY.node,
+): Record<string, NodeToolSchema>;
+function toolSchemas(
+  manifest: LearningManifest,
+  key: typeof MANIFEST_TOOL_KEY.browser,
+): Record<string, ToolSchema>;
+function toolSchemas(
+  manifest: LearningManifest,
+  key: typeof MANIFEST_TOOL_KEY.node | typeof MANIFEST_TOOL_KEY.browser,
+): Record<string, NodeToolSchema | ToolSchema> {
   const value = manifest[key] || {};
   return value && typeof value === "object" && !Array.isArray(value)
     ? { ...value }
     : {};
 }
 
-function relativeSitePath(siteDir, manifestPath, label) {
+function relativeSitePath(
+  siteDir: string,
+  manifestPath: string,
+  label: string,
+) {
   if (typeof manifestPath !== "string" || !manifestPath.trim()) {
-    throw new Error(`${label} path must be a non-empty relative path`);
+    throw new SiteSkillError(
+      "TOOL_PATH_INVALID",
+      `${label} path must be a non-empty relative path`,
+    );
   }
   if (
     manifestPath.includes("\\") ||
     isAbsolute(manifestPath) ||
     manifestPath.split("/").includes("..")
   ) {
-    throw new Error(
+    throw new SiteSkillError(
+      "TOOL_PATH_INVALID",
       `${label} path must be relative to the site skill directory`,
     );
   }
   const resolved = resolve(siteDir, manifestPath);
   const siteRoot = resolve(siteDir);
   if (resolved !== siteRoot && !resolved.startsWith(`${siteRoot}/`)) {
-    throw new Error(`${label} path must stay inside the site skill directory`);
+    throw new SiteSkillError(
+      "TOOL_PATH_INVALID",
+      `${label} path must stay inside the site skill directory`,
+    );
   }
   return resolved;
 }

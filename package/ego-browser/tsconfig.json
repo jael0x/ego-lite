@@ -6,7 +6,7 @@
     "lib": ["ES2024", "DOM"],
     "allowJs": false,
     "checkJs": false,
-    "strict": false,
+    "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "types": ["node"]

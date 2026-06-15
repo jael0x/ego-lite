@@ -18,6 +18,8 @@ import {
   ensureRefMapForRef,
   registerSnapshotForRefRefresh,
 } from "../ref-state.js";
+import { CDP } from "../constants.js";
+import type { CdpParams } from "../types.js";
 
 type SnapshotOptions = {
   scope?: "only_within_viewport" | "full_page";
@@ -44,7 +46,11 @@ export async function drainEvents() {
 }
 
 export async function snapshot(options: SnapshotOptions = {}) {
-  const result = await browserEgo().snapshot(options);
+  const ego = browserEgo();
+  if (typeof ego.snapshot !== "function") {
+    throw new Error("snapshot requires ego.snapshot");
+  }
+  const result = await ego.snapshot(options);
   browserSnapshotRefsToRefMap(browserRefMap, result.refs || []);
   return result;
 }
@@ -67,7 +73,7 @@ export async function snapshotText(options: SnapshotOptions = {}) {
   return result.content || "";
 }
 
-export async function elementCenter(selectorOrRef) {
+export async function elementCenter(selectorOrRef: string) {
   await ensureRefMapForRef(selectorOrRef);
   return resolveElementCenter(
     { sendRaw: cdp },
@@ -91,7 +97,7 @@ export async function captureScreenshot(
 ) {
   const full = options.full ?? false;
   const raw = options.raw ?? false;
-  const params: any = {
+  const params: CdpParams = {
     format: "png",
     captureBeyondViewport: full,
   };
@@ -123,7 +129,7 @@ export async function captureScreenshot(
       }
     }
   }
-  const result = await cdp("Page.captureScreenshot", params);
+  const result = await cdp(CDP.pageCaptureScreenshot, params);
   await state.writeFile(path, Buffer.from(result.data, "base64"));
   return path;
 }

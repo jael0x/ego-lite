@@ -7,14 +7,11 @@ import {
   invalidateSession,
   setPreferredTarget,
 } from "./browser-runtime.js";
-import { formatCliLogValue } from "./format.js";
+import { createCliLog } from "./format.js";
 import { runMain } from "./run.js";
+import type { CdpResult, EgoRuntime } from "./types.js";
 
 type HelperFunction = (...args: unknown[]) => unknown;
-type EgoRuntime = Record<string, unknown> & {
-  helpers?: Record<string, HelperFunction>;
-  learnings?: Record<string, unknown>;
-};
 type InstallTarget = Record<string, unknown> & {
   ego?: EgoRuntime;
 };
@@ -33,7 +30,9 @@ const SYNC_HELPERS = new Set(["help"]);
 const EGO_WRAPPED = Symbol.for("egoBrowser.sdkWrapped");
 
 export function installEgoSdk(
-  target: InstallTarget = globalThis,
+  // globalThis is the real install target in the browser runtime; widening it to
+  // a writable record here is the one boundary where that cast is justified.
+  target: InstallTarget = globalThis as unknown as InstallTarget,
   options: InstallEgoSdkOptions = {},
 ) {
   if (!target || typeof target !== "object") {
@@ -41,7 +40,7 @@ export function installEgoSdk(
   }
   const context = options.context || helpers.helperContext();
   const readySignal = Promise.resolve(options.ready);
-  let readyError = null;
+  let readyError: unknown = null;
   readySignal.catch((error) => {
     readyError = error;
   });
@@ -67,7 +66,7 @@ export function installEgoSdk(
     });
     installed[name] = exposed as HelperFunction;
   }
-  const cliLogFn = options.cliLog || createCliLog();
+  const cliLogFn = options.cliLog || createCliLog(process.stdout);
   Object.defineProperty(target, "cliLog", {
     value: cliLogFn,
     writable: true,
@@ -100,19 +99,13 @@ if (isDirectCli()) {
   try {
     process.exitCode = await runMain();
   } catch (error) {
-    console.error(error?.stack || error?.message || String(error));
+    console.error(
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    );
     process.exitCode = 1;
   }
 } else {
   installEgoSdk();
-}
-
-function createCliLog(
-  stream: { write(chunk: string): unknown } = process.stdout,
-) {
-  return (...args: unknown[]) => {
-    stream.write(`${args.map(formatCliLogValue).join(" ")}\n`);
-  };
 }
 
 function isDirectCli() {
@@ -129,10 +122,10 @@ function wrapInvalidating(ego: EgoRuntime, methodNames: string[]) {
       invalidateSession();
       clearPreferredTarget();
     };
-    ego[name] = function (...args: unknown[]) {
+    ego[name] = function (this: unknown, ...args: unknown[]) {
       const result = original.apply(this, args);
       if (result && typeof result.then === "function") {
-        return result.then((value) => {
+        return result.then((value: unknown) => {
           after();
           return value;
         });
@@ -146,10 +139,10 @@ function wrapInvalidating(ego: EgoRuntime, methodNames: string[]) {
 function wrapCreateTab(ego: EgoRuntime) {
   const original = ego.createTab;
   if (typeof original !== "function") return;
-  ego.createTab = function (...args: unknown[]) {
-    const result = original.apply(this, args);
+  ego.createTab = function (this: unknown, url?: string) {
+    const result = original.call(this, url);
     if (result && typeof result.then === "function") {
-      return result.then((value) => {
+      return result.then((value: CdpResult) => {
         invalidateSession();
         const id = value?.targetId || value?.result?.targetId;
         if (id) setPreferredTarget(id);

@@ -6,6 +6,26 @@ import { setOverrides, state } from "./state.js";
 import { assertNoEgoError, isEgoUserControlError } from "./ego-errors.js";
 import { help as helpRuntime, formatHelp } from "./help-runtime.js";
 import { cdp, decodeUnserializableJsValue, js } from "./cdp-eval.js";
+import { OWNERSHIP, SKIP_REASON } from "./constants.js";
+import type { CdpResult, EgoRuntime } from "./types.js";
+
+type TaskSpace = {
+  taskId: string | number;
+  id: number;
+  name: string;
+  createdBy?: string;
+  ownership?: string;
+  recentTabTitles?: string[];
+};
+
+/**
+ * Result of a task-space finish/handoff. Discriminated on `done` so the
+ * impossible states (`{ done: true, skipped }` and a bare `{ done: false }`)
+ * cannot be represented.
+ */
+type TaskSpaceResult =
+  | { done: true }
+  | { done: false; skipped: typeof SKIP_REASON.userOwned };
 import * as pointer from "./driver/pointer.js";
 import * as keyboard from "./driver/keyboard.js";
 import * as nav from "./driver/nav.js";
@@ -108,8 +128,11 @@ export async function listTaskSpaces() {
  * @param {string|undefined} ownership
  * @returns {boolean}
  */
-function isAgentOwned(ownership) {
-  return ownership === "agent" || ownership === "agentDelegatedToUser";
+function isAgentOwned(ownership: string | undefined) {
+  return (
+    ownership === OWNERSHIP.agent ||
+    ownership === OWNERSHIP.agentDelegatedToUser
+  );
 }
 
 /**
@@ -117,7 +140,7 @@ function isAgentOwned(ownership) {
  * @param {string|number} nameOrId Task space id or name.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
  */
-export async function switchTaskSpace(nameOrId) {
+export async function switchTaskSpace(nameOrId: string | number) {
   const ego = globalThis.ego;
   if (!ego || typeof ego.useTaskSpace !== "function") {
     throw new Error("switchTaskSpace requires ego.useTaskSpace");
@@ -136,7 +159,7 @@ export async function switchTaskSpace(nameOrId) {
  * @param {string} name Task space name.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
  */
-export async function newTaskSpace(name) {
+export async function newTaskSpace(name: string) {
   const ego = globalThis.ego;
   if (!ego || typeof ego.createTaskSpace !== "function") {
     throw new Error("newTaskSpace requires ego.createTaskSpace");
@@ -156,7 +179,7 @@ export async function newTaskSpace(name) {
  * @param {string|number} nameOrId Task space name or numeric id.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
  */
-export async function useOrCreateTaskSpace(nameOrId) {
+export async function useOrCreateTaskSpace(nameOrId: string | number) {
   const spaces = await listTaskSpaces();
   const existing = findMatchingTaskSpace(spaces, nameOrId);
   if (!existing) {
@@ -168,7 +191,7 @@ export async function useOrCreateTaskSpace(nameOrId) {
   if (isAgentOwned(existing.ownership)) {
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
-  if (existing.ownership === "user") {
+  if (existing.ownership === OWNERSHIP.user) {
     return claimTaskSpace(existing, "useOrCreateTaskSpace");
   }
   throw new Error(
@@ -176,7 +199,7 @@ export async function useOrCreateTaskSpace(nameOrId) {
   );
 }
 
-async function claimTaskSpace(space, op = "claimTaskSpace") {
+async function claimTaskSpace(space: TaskSpace, op = "claimTaskSpace") {
   const ego = globalThis.ego;
   if (!ego || typeof ego.claimTaskSpace !== "function") {
     throw new Error(`${op} requires ego.claimTaskSpace`);
@@ -192,7 +215,11 @@ async function claimTaskSpace(space, op = "claimTaskSpace") {
   return selectTaskSpace(ego, claimed, op);
 }
 
-async function selectTaskSpace(ego, space, op: string) {
+async function selectTaskSpace(
+  ego: EgoRuntime | undefined,
+  space: TaskSpace,
+  op: string,
+) {
   if (!ego || typeof ego.useTaskSpace !== "function") {
     throw new Error(`${op} requires ego.useTaskSpace`);
   }
@@ -201,7 +228,7 @@ async function selectTaskSpace(ego, space, op: string) {
 }
 
 async function selectTaskSpaceIfProvided(
-  ego,
+  ego: EgoRuntime | undefined,
   nameOrId?: string | number,
   op = "taskSpace",
 ) {
@@ -224,7 +251,7 @@ async function selectTaskSpaceIfProvided(
 export async function completeTaskSpace(
   nameOrId: string | number,
   options: { keep: boolean },
-) {
+): Promise<TaskSpaceResult> {
   if (
     (typeof nameOrId !== "string" && typeof nameOrId !== "number") ||
     nameOrId === ""
@@ -244,8 +271,8 @@ export async function completeTaskSpace(
     throw new Error(`task space not found: ${nameOrId}`);
   }
   if (options.keep) {
-    if (match.ownership === "user") {
-      return { done: false, skipped: "user-owned" as const };
+    if (match.ownership === OWNERSHIP.user) {
+      return { done: false, skipped: SKIP_REASON.userOwned };
     }
     await selectTaskSpace(ego, match, "completeTaskSpace");
     if (typeof ego.completeTaskSpace !== "function") {
@@ -253,7 +280,7 @@ export async function completeTaskSpace(
     }
     assertNoEgoError(await ego.completeTaskSpace(), "completeTaskSpace");
   } else {
-    if (match.ownership === "user") {
+    if (match.ownership === OWNERSHIP.user) {
       await claimTaskSpace(match, "completeTaskSpace");
     } else {
       await selectTaskSpace(ego, match, "completeTaskSpace");
@@ -273,15 +300,17 @@ export async function completeTaskSpace(
  * @param {string|number} [nameOrId] Task space id or name. If provided, switches to that space first.
  * @returns {Promise<{done: boolean, skipped?: "user-owned"}>} `{ done: true }` when control was handed off; `{ done: false, skipped: "user-owned" }` when nothing was done.
  */
-export async function handOffTaskSpace(nameOrId?: string | number) {
+export async function handOffTaskSpace(
+  nameOrId?: string | number,
+): Promise<TaskSpaceResult> {
   const ego = globalThis.ego;
   if (!ego || typeof ego.handOffTaskSpace !== "function") {
     throw new Error("handOffTaskSpace requires ego.handOffTaskSpace");
   }
   if (nameOrId !== undefined) {
     const match = await findTaskSpace(nameOrId);
-    if (match.ownership === "user") {
-      return { done: false, skipped: "user-owned" as const };
+    if (match.ownership === OWNERSHIP.user) {
+      return { done: false, skipped: SKIP_REASON.userOwned };
     }
     await selectTaskSpace(ego, match, "handOffTaskSpace");
   }
@@ -358,14 +387,16 @@ export async function waitForAgentControl(
   }
 }
 
-function normalizeTaskSpaces(raw) {
+function normalizeTaskSpaces(raw: CdpResult): TaskSpace[] {
   if (Array.isArray(raw?.taskSpaces)) {
-    return raw.taskSpaces.map(normalizeTaskSpace).filter(Boolean);
+    return raw.taskSpaces
+      .map(normalizeTaskSpace)
+      .filter((space): space is TaskSpace => space !== null);
   }
   throw new Error("listTaskSpaces expected { taskSpaces: [...] }");
 }
 
-function normalizeTaskSpace(space) {
+function normalizeTaskSpace(space: CdpResult | undefined): TaskSpace | null {
   const taskId = space?.taskId ?? space?.name ?? space?.id;
   if (taskId === undefined || taskId === null || taskId === "") {
     return null;
@@ -378,7 +409,7 @@ function normalizeTaskSpace(space) {
   };
 }
 
-function taskSpaceNumericId(space, op: string) {
+function taskSpaceNumericId(space: TaskSpace, op: string) {
   if (typeof space?.id !== "number" || !Number.isFinite(space.id)) {
     throw new Error(
       `${op} requires a numeric task space id, got ${JSON.stringify(space?.id)}`,
@@ -387,14 +418,17 @@ function taskSpaceNumericId(space, op: string) {
   return space.id;
 }
 
-async function findTaskSpace(nameOrId) {
+async function findTaskSpace(nameOrId: string | number) {
   const spaces = await listTaskSpaces();
   const match = findMatchingTaskSpace(spaces, nameOrId);
   if (!match) throw new Error(`task space not found: ${nameOrId}`);
   return match;
 }
 
-function findMatchingTaskSpace(spaces, nameOrId) {
+function findMatchingTaskSpace(
+  spaces: TaskSpace[],
+  nameOrId: string | number,
+): TaskSpace | undefined {
   if (typeof nameOrId === "number") {
     return spaces.find((space) => space.id === nameOrId);
   }
@@ -411,7 +445,7 @@ function findMatchingTaskSpace(spaces, nameOrId) {
   return undefined;
 }
 
-export async function siteSkillsForUrl(url) {
+export async function siteSkillsForUrl(url: string) {
   return siteSkillsForUrlCore(url, {
     agentWorkspace: state.agentWorkspace(),
   });
@@ -434,7 +468,11 @@ export async function siteSkills(url = undefined) {
  * @param {object} [args] Tool arguments.
  * @returns {Promise<any>} Tool result.
  */
-export async function runSiteTool(siteId, toolName, args: any = {}) {
+export async function runSiteTool(
+  siteId: string,
+  toolName: string,
+  args: Record<string, unknown> = {},
+) {
   return runNodeSiteTool(siteId, toolName, args, helperContext(), {
     agentWorkspace: state.agentWorkspace(),
   });
@@ -447,7 +485,11 @@ export async function runSiteTool(siteId, toolName, args: any = {}) {
  * @param {object} [args] Tool arguments.
  * @returns {Promise<any>} Browser tool result.
  */
-export async function runSiteBrowserTool(siteId, toolName, args: any = {}) {
+export async function runSiteBrowserTool(
+  siteId: string,
+  toolName: string,
+  args: Record<string, unknown> = {},
+) {
   const source = await loadBrowserToolSource(siteId, toolName, {
     agentWorkspace: state.agentWorkspace(),
   });
@@ -467,7 +509,7 @@ export async function learnContext(url = undefined) {
   });
 }
 
-export function helperContext(extra: any = {}) {
+export function helperContext(extra: Record<string, unknown> = {}) {
   const { newTab: _newTab, ...publicNav } = nav;
   const all = {
     ...pointer,
@@ -512,7 +554,7 @@ export async function loadAgentHelpers() {
     return {};
   }
   const module = await import(`${pathToFileURL(path).href}?t=${Date.now()}`);
-  const out: Record<string, any> = {};
+  const out: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(module)) {
     if (!name.startsWith("_")) {
       out[name] = value;

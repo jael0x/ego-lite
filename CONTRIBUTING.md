@@ -268,7 +268,7 @@ npm run validate:site-skills   # if learnings changed
 - **Node 22+**
 - **All public helpers are camelCase** — do not provide `snake_case` aliases
 - **Async helpers start with a verb**: `runMain`, `ensureSession`, `siteSkillsForUrl`, `runSiteTool`, ...
-- **TypeScript non-strict mode**: `strict: false`, but keep explicit type signatures
+- **TypeScript strict mode**: `strict: true` — annotate public signatures and avoid `any` (justify with a comment when it is genuinely unavoidable, e.g. raw CDP payloads)
 - **Shared state goes through the `state.ts` singleton** — do not thread `connection` / `send` through function parameters
 - **Helpers are injected, not imported**: agent scripts do not `import`; all helpers are placed in scope by `run.ts`
 - **Snapshot refs (`@eN`) are short-lived**: re-snapshot after any DOM mutation; for long-lived values use `loc=...` or stable CSS / ARIA

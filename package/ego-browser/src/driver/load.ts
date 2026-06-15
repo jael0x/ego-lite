@@ -1,5 +1,6 @@
 import { cdp, js } from "../cdp-eval.js";
 import { state } from "../state.js";
+import { CDP } from "../constants.js";
 
 export type WaitForLoadOptions = {
   timeout?: number;
@@ -11,7 +12,7 @@ export async function waitForDocumentLoad(options: WaitForLoadOptions = {}) {
   while (state.now() < deadline) {
     let committed = true;
     try {
-      const tree = await cdp("Page.getFrameTree");
+      const tree = await cdp(CDP.pageGetFrameTree);
       const url = tree.frameTree?.frame?.url || "";
       committed = url !== "" && url !== ":" && url !== "about:blank";
     } catch {

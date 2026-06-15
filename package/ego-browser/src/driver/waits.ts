@@ -2,6 +2,7 @@ import { state } from "../state.js";
 import { cdp } from "../cdp-eval.js";
 import { resolveHandle, releaseHandle } from "./element-ops.js";
 import { ElementResolutionError } from "../element-resolver.js";
+import { CDP } from "../constants.js";
 import { type WaitForLoadOptions, waitForDocumentLoad } from "./load.js";
 import { drainEvents } from "./observe.js";
 
@@ -62,7 +63,7 @@ export async function waitForElement(
     try {
       if (!visible) return true;
       const response = await cdp(
-        "Runtime.callFunctionOn",
+        CDP.runtimeCallFunctionOn,
         {
           functionDeclaration: visibilityFn,
           objectId: handle.objectId,
@@ -102,7 +103,7 @@ export async function waitForNetworkIdle(
   let lastActivity = state.now();
   const inflight = new Set();
   const ownsNetworkDomain = !state.networkDomainEnabled;
-  await cdp("Network.enable").catch(() => {
+  await cdp(CDP.networkEnable).catch(() => {
     // Domain may be unsupported by the bridge; fall back to passive observation.
   });
   try {
@@ -131,7 +132,7 @@ export async function waitForNetworkIdle(
     return false;
   } finally {
     if (ownsNetworkDomain) {
-      await cdp("Network.disable").catch(() => {
+      await cdp(CDP.networkDisable).catch(() => {
         // Best-effort cleanup; keeps the event buffer from accumulating after the wait.
       });
     }

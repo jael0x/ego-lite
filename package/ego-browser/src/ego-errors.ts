@@ -109,12 +109,12 @@ export function isEgoUserControlError(err: unknown): boolean {
   return egoErrorCode(err) === "EGO_TASK_SPACE_USER_IN_CONTROL";
 }
 
-export function assertNoEgoError(result, op: string) {
+export function assertNoEgoError<T>(result: T, op: string): T {
   if (
     result &&
     typeof result === "object" &&
     "error" in result &&
-    result.error != null
+    (result as { error?: unknown }).error != null
   ) {
     const { code, message } = resolveEgoError(result);
     const error: Error & { error_code?: string } = new Error(

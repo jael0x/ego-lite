@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ENV } from "./constants.js";
+
 export const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(SRC_DIR, "..");
 
 export function agentWorkspace() {
-  if (process.env.EGO_BROWSER_AGENT_WORKSPACE) {
-    return resolvePath(process.env.EGO_BROWSER_AGENT_WORKSPACE);
+  const configured = process.env[ENV.agentWorkspace];
+  if (configured) {
+    return resolvePath(configured);
   }
 
   const bundledSkill = resolve(SRC_DIR, "ego-browser");
@@ -18,14 +21,17 @@ export function agentWorkspace() {
   return resolve(REPO_ROOT, "..", "..", "skills", "ego-browser");
 }
 
-export function resolvePath(path) {
+export function resolvePath(path: string) {
   if (path.startsWith("~")) {
-    return resolve(process.env.HOME || process.env.USERPROFILE || ".", path.slice(1));
+    return resolve(
+      process.env.HOME || process.env.USERPROFILE || ".",
+      path.slice(1),
+    );
   }
   return resolve(path);
 }
 
-export function loadEnvFile(path) {
+export function loadEnvFile(path: string) {
   if (!existsSync(path)) {
     return;
   }
@@ -36,7 +42,10 @@ export function loadEnvFile(path) {
     }
     const index = line.indexOf("=");
     const key = line.slice(0, index).trim();
-    const value = line.slice(index + 1).trim().replace(/^['"]|['"]$/g, "");
+    const value = line
+      .slice(index + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, "");
     if (key && process.env[key] === undefined) {
       process.env[key] = value;
     }

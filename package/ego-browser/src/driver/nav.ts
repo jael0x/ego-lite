@@ -10,6 +10,8 @@ import {
 import { cdp, js } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
 import { state } from "../state.js";
+import { CDP } from "../constants.js";
+import type { CdpResult } from "../types.js";
 import { waitForDocumentLoad } from "./load.js";
 
 export const INTERNAL_URL_PREFIXES = [
@@ -54,8 +56,8 @@ type TabTarget = string | { targetId: string };
  * @param {string} url Absolute or browser-supported URL to load.
  * @returns {Promise<object>} CDP Page.navigate result.
  */
-export async function gotoUrl(url) {
-  return cdp("Page.navigate", { url });
+export async function gotoUrl(url: string) {
+  return cdp(CDP.pageNavigate, { url });
 }
 
 /**
@@ -106,8 +108,12 @@ export async function listTabs(
   options: ListTabsOptions = {},
 ): Promise<TabInfo[]> {
   const includeChrome = options.includeChrome ?? true;
-  const result = assertNoEgoError(await browserEgo().listTabs(), "listTabs");
-  const tabs = result.tabs || [];
+  const ego = browserEgo();
+  if (typeof ego.listTabs !== "function") {
+    throw new Error("listTabs requires ego.listTabs");
+  }
+  const result = assertNoEgoError(await ego.listTabs(), "listTabs");
+  const tabs: CdpResult[] = result.tabs || [];
   return tabs
     .filter(
       (tab) =>
@@ -145,7 +151,7 @@ export async function currentTab() {
  */
 export async function switchTab(target: string | { targetId: string }) {
   const targetId = typeof target === "object" ? target.targetId : target;
-  await cdp("Target.activateTarget", { targetId });
+  await cdp(CDP.targetActivateTarget, { targetId });
   invalidateSession();
   setPreferredTarget(targetId);
   return targetId;
@@ -157,7 +163,11 @@ export async function switchTab(target: string | { targetId: string }) {
  * @returns {Promise<string>} New target id.
  */
 export async function newTab(url = "about:blank") {
-  const result = assertNoEgoError(await browserEgo().createTab(url), "newTab");
+  const ego = browserEgo();
+  if (typeof ego.createTab !== "function") {
+    throw new Error("newTab requires ego.createTab");
+  }
+  const result = assertNoEgoError(await ego.createTab(url), "newTab");
   if (!result.targetId) {
     throw new Error("newTab returned no targetId");
   }
@@ -214,7 +224,7 @@ export async function closeTab(target: TabTarget | undefined = undefined) {
   if (!targetId) {
     throw new Error("closeTab requires a targetId");
   }
-  await cdp("Target.closeTarget", { targetId });
+  await cdp(CDP.targetCloseTarget, { targetId });
   invalidateSession();
   if (state.preferredTargetId === targetId) {
     clearPreferredTarget();
@@ -247,8 +257,9 @@ export async function ensureRealTab() {
  * @param {string} urlSubstring URL substring to match.
  * @returns {Promise<string|null>} Matching iframe target id, if any.
  */
-export async function iframeTarget(urlSubstring) {
-  const targets = (await cdp("Target.getTargets")).targetInfos || [];
+export async function iframeTarget(urlSubstring: string) {
+  const targets: CdpResult[] =
+    (await cdp(CDP.targetGetTargets)).targetInfos || [];
   return (
     targets.find(
       (target) =>

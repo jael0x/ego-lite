@@ -1,20 +1,29 @@
 import { js } from "./cdp-eval.js";
 
+type FetchOptions = {
+  headers?: Record<string, string>;
+  timeout?: number;
+  method?: string;
+  body?: BodyInit;
+};
+
 /**
  * Fetch text from Node with a browser-like User-Agent.
  * @param {string} url URL to fetch.
  * @param {{headers?: Record<string,string>, timeout?: number, method?: string, body?: any}} [options]
  * @returns {Promise<string>} Response body text.
  */
-export async function serverFetch(url, options: any = {}) {
+export async function serverFetch(url: string, options: FetchOptions = {}) {
   const { timeout = 20.0, headers = {}, ...fetchOptions } = options;
   const response = await fetch(url, {
     ...fetchOptions,
     headers: { "User-Agent": "Mozilla/5.0", ...headers },
-    signal: AbortSignal.timeout(timeout * 1000)
+    signal: AbortSignal.timeout(timeout * 1000),
   });
   if (!response.ok) {
-    throw new Error(`${fetchOptions.method || "GET"} ${url} failed: HTTP ${response.status}`);
+    throw new Error(
+      `${fetchOptions.method || "GET"} ${url} failed: HTTP ${response.status}`,
+    );
   }
   return response.text();
 }
@@ -25,8 +34,11 @@ export async function serverFetch(url, options: any = {}) {
  * @param {{headers?: Record<string,string>, timeout?: number, method?: string, body?: any}} [options]
  * @returns {Promise<string>} Response body text.
  */
-export async function browserFetch(url, options: any = {}) {
+export async function browserFetch(url: string, options: FetchOptions = {}) {
   const { timeout = 20.0, ...fetchOptions } = options;
+  // Trust boundary: url/options are JSON-serialized (not string-concatenated)
+  // before being embedded in the page-context script, so caller values cannot
+  // break out of the data literal into executable code.
   const payload = JSON.stringify({ url, options: fetchOptions, timeout });
   return js(`(async () => {
     const { url, options, timeout } = ${payload};

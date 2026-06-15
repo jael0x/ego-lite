@@ -1,21 +1,29 @@
+import type { RefEntry } from "./types.js";
+
 export class RefMap {
-  map: Map<string, any>;
+  map: Map<string, RefEntry>;
 
   constructor() {
     this.map = new Map();
   }
 
-  add(refId, backendNodeId, role, name, nth = undefined) {
+  add(
+    refId: string,
+    backendNodeId: number | null | undefined,
+    role?: string,
+    name?: string,
+    nth: number | undefined = undefined,
+  ) {
     this.addWithFrame(refId, backendNodeId, role, name, nth, undefined);
   }
 
   addWithFrame(
-    refId,
-    backendNodeId,
-    role,
-    name,
-    nth = undefined,
-    frameId = undefined,
+    refId: string,
+    backendNodeId: number | null | undefined,
+    role: string | undefined,
+    name: string | undefined,
+    nth: number | undefined = undefined,
+    frameId: string | undefined = undefined,
   ) {
     this.map.set(refId, {
       backendNodeId,
@@ -27,11 +35,11 @@ export class RefMap {
     });
   }
 
-  get(refId) {
+  get(refId: string) {
     return this.map.get(refId);
   }
 
-  remove(refId) {
+  remove(refId: string) {
     this.map.delete(refId);
   }
 
@@ -40,7 +48,7 @@ export class RefMap {
   }
 }
 
-export function parseRef(input) {
+export function parseRef(input: unknown) {
   const trimmed = String(input || "").trim();
   for (const candidate of [
     trimmed.startsWith("@") ? trimmed.slice(1) : null,
