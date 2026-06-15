@@ -1,4 +1,7 @@
 import { parseRef } from "./ref-map.js";
+import { CDP, LOCATOR_KIND } from "./constants.js";
+import type { CdpClient, CdpParams, CdpResult, RefEntry } from "./types.js";
+import type { RefMap } from "./ref-map.js";
 
 export class ElementResolutionError extends Error {
   kind: "transient" | "permanent";
@@ -9,7 +12,30 @@ export class ElementResolutionError extends Error {
   }
 }
 
-function exceptionText(result: any) {
+type IframeSessions = Map<string, string> | Record<string, string>;
+
+type CssLocator = {
+  kind: typeof LOCATOR_KIND.css;
+  selector: string;
+  raw: string;
+};
+type HrefLocator = {
+  kind: typeof LOCATOR_KIND.href;
+  href: string;
+  raw: string;
+};
+type RoleLocator = {
+  kind: typeof LOCATOR_KIND.role;
+  role: string;
+  name: string;
+  raw: string;
+};
+type Locator = CssLocator | HrefLocator | RoleLocator;
+
+type ElementCenter = { x: number; y: number; sessionId?: string };
+type ElementHandle = { objectId: string; sessionId?: string };
+
+function exceptionText(result: CdpResult) {
   const d = result?.exceptionDetails;
   return d?.exception?.description || d?.text || "evaluation error";
 }
@@ -20,13 +46,67 @@ function matchCountKind(message: string): "transient" | "permanent" {
   return n > 1 ? "permanent" : "transient";
 }
 
+/**
+ * Resolve a RefMap entry by first trying its cached backendNodeId, then falling
+ * back to a fresh role/name lookup when that node has gone stale.
+ *
+ * `attempt` returns the result, or `null` to signal "couldn't produce one, fall
+ * back to role/name". It may throw an {@link ElementResolutionError} to abort
+ * the fallback (e.g. a node that resolved but isn't rendered yet — retrying via
+ * role/name could silently target a different element with the same label).
+ */
+async function resolveRefEntry<T>(
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  entry: RefEntry,
+  effectiveSessionId: string | undefined,
+  iframeSessions: IframeSessions,
+  attempt: (
+    backendNodeId: number,
+    sid: string | undefined,
+  ) => Promise<T | null>,
+): Promise<T> {
+  if (entry.backendNodeId !== undefined && entry.backendNodeId !== null) {
+    try {
+      const result = await attempt(entry.backendNodeId, effectiveSessionId);
+      if (result !== null) {
+        return result;
+      }
+    } catch (error) {
+      if (error instanceof ElementResolutionError) {
+        // The node resolved but has no usable box model (not rendered yet).
+        // Propagate the retryable state instead of falling back to role/name.
+        throw error;
+      }
+      // The backend node can become stale after DOM updates; fall back below.
+    }
+  }
+  const backendNodeId = await findBackendNodeIdByRoleName(
+    cdp,
+    sessionId,
+    entry.role,
+    entry.name,
+    entry.nth,
+    entry.frameId,
+    iframeSessions,
+  );
+  const result = await attempt(backendNodeId, effectiveSessionId);
+  if (result !== null) {
+    return result;
+  }
+  throw new ElementResolutionError(
+    `Could not resolve element for ref (role=${entry.role} name=${entry.name})`,
+    "permanent",
+  );
+}
+
 export async function resolveElementCenter(
-  cdp,
-  sessionId,
-  refMap,
-  selectorOrRef,
-  iframeSessions = new Map(),
-) {
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  refMap: RefMap,
+  selectorOrRef: string,
+  iframeSessions: IframeSessions = new Map(),
+): Promise<ElementCenter> {
   const refId = parseRef(selectorOrRef);
   if (refId) {
     const entry = refMap.get(refId);
@@ -38,44 +118,22 @@ export async function resolveElementCenter(
       sessionId,
       iframeSessions,
     );
-    if (entry.backendNodeId !== undefined && entry.backendNodeId !== null) {
-      try {
-        const result = await send(
-          cdp,
-          "DOM.getBoxModel",
-          { backendNodeId: entry.backendNodeId },
-          effectiveSessionId,
-        );
-        return {
-          ...boxModelCenter(result.model),
-          sessionId: effectiveSessionId,
-        };
-      } catch (error) {
-        if (error instanceof ElementResolutionError) {
-          // The node resolved but has no usable box model (not rendered yet).
-          // Propagate the retryable state instead of falling back to role/name,
-          // which could silently target a different node with the same label.
-          throw error;
-        }
-        // The backend node can become stale after DOM updates; fall back to role/name lookup below.
-      }
-    }
-    const backendNodeId = await findBackendNodeIdByRoleName(
+    return resolveRefEntry(
       cdp,
       sessionId,
-      entry.role,
-      entry.name,
-      entry.nth,
-      entry.frameId,
-      iframeSessions,
-    );
-    const result = await send(
-      cdp,
-      "DOM.getBoxModel",
-      { backendNodeId },
+      entry,
       effectiveSessionId,
+      iframeSessions,
+      async (backendNodeId, sid) => {
+        const result = await send(
+          cdp,
+          CDP.domGetBoxModel,
+          { backendNodeId },
+          sid,
+        );
+        return { ...boxModelCenter(result.model), sessionId: sid };
+      },
     );
-    return { ...boxModelCenter(result.model), sessionId: effectiveSessionId };
   }
 
   const locator = parseLocator(selectorOrRef);
@@ -85,7 +143,7 @@ export async function resolveElementCenter(
 
   const result = await send(
     cdp,
-    "Runtime.evaluate",
+    CDP.runtimeEvaluate,
     {
       expression: buildSelectorCenterJs(selectorOrRef),
       returnByValue: true,
@@ -110,12 +168,12 @@ export async function resolveElementCenter(
 }
 
 export async function resolveElementObjectId(
-  cdp,
-  sessionId,
-  refMap,
-  selectorOrRef,
-  iframeSessions = new Map(),
-) {
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  refMap: RefMap,
+  selectorOrRef: string,
+  iframeSessions: IframeSessions = new Map(),
+): Promise<ElementHandle> {
   const refId = parseRef(selectorOrRef);
   if (refId) {
     const entry = refMap.get(refId);
@@ -127,48 +185,23 @@ export async function resolveElementObjectId(
       sessionId,
       iframeSessions,
     );
-    if (entry.backendNodeId !== undefined && entry.backendNodeId !== null) {
-      try {
-        const result = await send(
-          cdp,
-          "DOM.resolveNode",
-          {
-            backendNodeId: entry.backendNodeId,
-            objectGroup: "ego-browser",
-          },
-          effectiveSessionId,
-        );
-        const objectId = result.object?.objectId;
-        if (objectId) {
-          return { objectId, sessionId: effectiveSessionId };
-        }
-      } catch {
-        // The backend node can become stale after DOM updates; fall back to role/name lookup below.
-      }
-    }
-    const backendNodeId = await findBackendNodeIdByRoleName(
+    return resolveRefEntry(
       cdp,
       sessionId,
-      entry.role,
-      entry.name,
-      entry.nth,
-      entry.frameId,
-      iframeSessions,
-    );
-    const result = await send(
-      cdp,
-      "DOM.resolveNode",
-      { backendNodeId, objectGroup: "ego-browser" },
+      entry,
       effectiveSessionId,
+      iframeSessions,
+      async (backendNodeId, sid) => {
+        const result = await send(
+          cdp,
+          CDP.domResolveNode,
+          { backendNodeId, objectGroup: "ego-browser" },
+          sid,
+        );
+        const objectId = result.object?.objectId;
+        return objectId ? { objectId, sessionId: sid } : null;
+      },
     );
-    const objectId = result.object?.objectId;
-    if (!objectId) {
-      throw new ElementResolutionError(
-        `No objectId for ref ${refId}`,
-        "permanent",
-      );
-    }
-    return { objectId, sessionId: effectiveSessionId };
   }
 
   const locator = parseLocator(selectorOrRef);
@@ -178,7 +211,7 @@ export async function resolveElementObjectId(
 
   const result = await send(
     cdp,
-    "Runtime.evaluate",
+    CDP.runtimeEvaluate,
     {
       expression: buildFindElementJs(selectorOrRef),
       returnByValue: false,
@@ -203,7 +236,11 @@ export async function resolveElementObjectId(
   return { objectId, sessionId };
 }
 
-function resolveFrameSession(frameId, sessionId, iframeSessions) {
+function resolveFrameSession(
+  frameId: string | undefined,
+  sessionId: string | undefined,
+  iframeSessions: IframeSessions,
+) {
   if (!frameId) {
     return sessionId;
   }
@@ -213,8 +250,12 @@ function resolveFrameSession(frameId, sessionId, iframeSessions) {
   return iframeSessions?.[frameId] || sessionId;
 }
 
-async function resolveLocatorCenter(cdp, sessionId, locator) {
-  if (locator.kind === "role") {
+async function resolveLocatorCenter(
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  locator: Locator,
+): Promise<ElementCenter> {
+  if (locator.kind === LOCATOR_KIND.role) {
     const backendNodeId = await findUniqueBackendNodeIdByRoleName(
       cdp,
       sessionId,
@@ -223,7 +264,7 @@ async function resolveLocatorCenter(cdp, sessionId, locator) {
     );
     const result = await send(
       cdp,
-      "DOM.getBoxModel",
+      CDP.domGetBoxModel,
       { backendNodeId },
       sessionId,
     );
@@ -231,7 +272,7 @@ async function resolveLocatorCenter(cdp, sessionId, locator) {
   }
   const result = await send(
     cdp,
-    "Runtime.evaluate",
+    CDP.runtimeEvaluate,
     {
       expression: buildLocatorCenterJs(locator),
       returnByValue: true,
@@ -258,8 +299,12 @@ async function resolveLocatorCenter(cdp, sessionId, locator) {
   return { x: value.x, y: value.y, sessionId };
 }
 
-async function resolveLocatorObjectId(cdp, sessionId, locator) {
-  if (locator.kind === "role") {
+async function resolveLocatorObjectId(
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  locator: Locator,
+): Promise<ElementHandle> {
+  if (locator.kind === LOCATOR_KIND.role) {
     const backendNodeId = await findUniqueBackendNodeIdByRoleName(
       cdp,
       sessionId,
@@ -268,7 +313,7 @@ async function resolveLocatorObjectId(cdp, sessionId, locator) {
     );
     const result = await send(
       cdp,
-      "DOM.resolveNode",
+      CDP.domResolveNode,
       { backendNodeId, objectGroup: "ego-browser" },
       sessionId,
     );
@@ -296,7 +341,7 @@ async function resolveLocatorObjectId(cdp, sessionId, locator) {
   }
   const result = await send(
     cdp,
-    "Runtime.evaluate",
+    CDP.runtimeEvaluate,
     {
       expression: buildLocatorFindJs(locator),
       returnByValue: false,
@@ -315,10 +360,14 @@ async function resolveLocatorObjectId(cdp, sessionId, locator) {
   return { objectId, sessionId };
 }
 
-async function locatorCount(cdp, sessionId, locator) {
+async function locatorCount(
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  locator: CssLocator | HrefLocator,
+) {
   const result = await send(
     cdp,
-    "Runtime.evaluate",
+    CDP.runtimeEvaluate,
     {
       expression: buildLocatorCountJs(locator),
       returnByValue: true,
@@ -336,14 +385,14 @@ async function locatorCount(cdp, sessionId, locator) {
 }
 
 async function findBackendNodeIdByRoleName(
-  cdp,
-  sessionId,
-  role,
-  name,
-  nth = undefined,
-  frameId = undefined,
-  iframeSessions = new Map(),
-) {
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  role: string | undefined,
+  name: string | undefined,
+  nth: number | undefined = undefined,
+  frameId: string | undefined = undefined,
+  iframeSessions: IframeSessions = new Map(),
+): Promise<number> {
   const [params, effectiveSessionId] = resolveAxSession(
     frameId,
     sessionId,
@@ -351,7 +400,7 @@ async function findBackendNodeIdByRoleName(
   );
   const result = await send(
     cdp,
-    "Accessibility.getFullAXTree",
+    CDP.accessibilityGetFullAXTree,
     params,
     effectiveSessionId,
   );
@@ -387,9 +436,14 @@ async function findBackendNodeIdByRoleName(
   );
 }
 
-async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
-  const result = await send(cdp, "Accessibility.getFullAXTree", {}, sessionId);
-  const matches = [];
+async function findUniqueBackendNodeIdByRoleName(
+  cdp: CdpClient,
+  sessionId: string | undefined,
+  role: string,
+  name: string,
+): Promise<number> {
+  const result = await send(cdp, CDP.accessibilityGetFullAXTree, {}, sessionId);
+  const matches: CdpResult[] = [];
   for (const node of result.nodes || []) {
     if (node.ignored) {
       continue;
@@ -423,7 +477,11 @@ async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
   return backendNodeId;
 }
 
-function resolveAxSession(frameId, sessionId, iframeSessions) {
+function resolveAxSession(
+  frameId: string | undefined,
+  sessionId: string | undefined,
+  iframeSessions: IframeSessions,
+): [CdpParams, string | undefined] {
   if (!frameId) {
     return [{}, sessionId];
   }
@@ -437,28 +495,28 @@ function resolveAxSession(frameId, sessionId, iframeSessions) {
   return [{ frameId }, sessionId];
 }
 
-function buildFindElementJs(selector) {
+function buildFindElementJs(selector: string) {
   if (String(selector).startsWith("xpath=")) {
     return `document.evaluate(${JSON.stringify(String(selector).slice(6))}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;
   }
   return `document.querySelector(${JSON.stringify(selector)})`;
 }
 
-function buildLocatorFindJs(locator) {
-  if (locator.kind === "css") {
+function buildLocatorFindJs(locator: CssLocator | HrefLocator) {
+  if (locator.kind === LOCATOR_KIND.css) {
     return `document.querySelector(${JSON.stringify(locator.selector)})`;
   }
   return `(() => ${hrefElementsJs(locator.href)}[0] || null)()`;
 }
 
-function buildLocatorCountJs(locator) {
-  if (locator.kind === "css") {
+function buildLocatorCountJs(locator: CssLocator | HrefLocator) {
+  if (locator.kind === LOCATOR_KIND.css) {
     return `document.querySelectorAll(${JSON.stringify(locator.selector)}).length`;
   }
   return `(() => ${hrefElementsJs(locator.href)}.length)()`;
 }
 
-function buildLocatorCenterJs(locator) {
+function buildLocatorCenterJs(locator: CssLocator | HrefLocator) {
   return `(() => {
             const count = ${buildLocatorCountJs(locator)};
             if (count !== 1) return { error: ${JSON.stringify(`Locator ${locator.raw} matched`)} + ' ' + count + ' elements' };
@@ -469,7 +527,7 @@ function buildLocatorCenterJs(locator) {
         })()`;
 }
 
-function hrefElementsJs(href) {
+function hrefElementsJs(href: string) {
   return `Array.from(document.querySelectorAll('a[href]')).filter((el) => {
             try {
               const u = new URL(el.href, location.href);
@@ -481,7 +539,7 @@ function hrefElementsJs(href) {
           })`;
 }
 
-function buildSelectorCenterJs(selector) {
+function buildSelectorCenterJs(selector: string) {
   const findExpr = buildFindElementJs(selector);
   return `(() => {
             const el = ${findExpr};
@@ -491,23 +549,23 @@ function buildSelectorCenterJs(selector) {
         })()`;
 }
 
-function parseLocator(input) {
+function parseLocator(input: string): Locator | null {
   let value = String(input || "").trim();
   if (value.startsWith("loc=")) {
     value = value.slice(4);
   }
   if (value.startsWith("css:")) {
     const selector = value.slice(4);
-    return selector ? { kind: "css", selector, raw: value } : null;
+    return selector ? { kind: LOCATOR_KIND.css, selector, raw: value } : null;
   }
   if (value.startsWith("href:")) {
     const href = value.slice(5);
-    return href ? { kind: "href", href, raw: value } : null;
+    return href ? { kind: LOCATOR_KIND.href, href, raw: value } : null;
   }
   const roleMatch = /^role:([A-Za-z0-9_-]+)\[name=(.+)\]$/.exec(value);
   if (roleMatch) {
     return {
-      kind: "role",
+      kind: LOCATOR_KIND.role,
       role: roleMatch[1],
       name: parseLocatorName(roleMatch[2]),
       raw: value,
@@ -516,7 +574,7 @@ function parseLocator(input) {
   return null;
 }
 
-function parseLocatorName(raw) {
+function parseLocatorName(raw: string) {
   const trimmed = raw.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     try {
@@ -531,7 +589,7 @@ function parseLocatorName(raw) {
   return trimmed;
 }
 
-function boxModelCenter(model: any = {}) {
+function boxModelCenter(model: CdpResult = {}) {
   const content = model.content || [];
   if (content.length < 8) {
     // Returning a fake (0,0) here would silently click the viewport corner.
@@ -548,7 +606,7 @@ function boxModelCenter(model: any = {}) {
   };
 }
 
-function extractAxString(value) {
+function extractAxString(value: CdpResult | undefined) {
   const raw = value?.value;
   if (typeof raw === "string") {
     return raw;
@@ -559,6 +617,11 @@ function extractAxString(value) {
   return "";
 }
 
-function send(cdp, method, params: any = {}, sessionId = undefined) {
+function send(
+  cdp: CdpClient,
+  method: string,
+  params: CdpParams = {},
+  sessionId?: string,
+) {
   return cdp.sendRaw(method, params, sessionId);
 }
