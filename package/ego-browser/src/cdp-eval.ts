@@ -1,4 +1,6 @@
 import { send, state } from "./state.js";
+import { CDP } from "./constants.js";
+import type { CdpParams, CdpResult } from "./types.js";
 
 class TimeoutError extends Error {}
 
@@ -11,13 +13,17 @@ let hasWarnedAboutFunctionJs = false;
  * @param {string} [sessionId] Optional attached target session id.
  * @returns {Promise<object>} CDP result object.
  */
-export async function cdp(method, params: any = {}, sessionId = undefined) {
+export async function cdp(
+  method: string,
+  params: CdpParams = {},
+  sessionId?: string,
+): Promise<CdpResult> {
   const result = state.cdpOverride
     ? await state.cdpOverride(method, params, sessionId)
     : (await send({ method, params, session_id: sessionId })).result || {};
   if (
     !sessionId &&
-    (method === "Network.enable" || method === "Network.disable")
+    (method === CDP.networkEnable || method === CDP.networkDisable)
   ) {
     // Mirror the default session's Network domain state so helpers like
     // waitForNetworkIdle can restore it instead of tearing down a domain
@@ -35,7 +41,13 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
  * @param {string} [targetId] Optional target id to attach and evaluate in.
  * @returns {Promise<any>} Runtime.evaluate return-by-value result.
  */
-export async function js(expression, targetId = undefined) {
+// Trust boundary: js() is a thin wrapper over CDP Runtime.evaluate and runs the
+// caller-supplied expression with full page authority by design. Callers are the
+// local operator's own automation scripts, not untrusted input.
+export async function js(
+  expression: string | (() => unknown),
+  targetId?: string,
+): Promise<any> {
   if (typeof expression === "function") {
     const source = expression.toString();
     if (!hasWarnedAboutFunctionJs) {
@@ -56,7 +68,7 @@ export async function js(expression, targetId = undefined) {
     );
   }
   const sessionId = targetId
-    ? (await cdp("Target.attachToTarget", { targetId, flatten: true }))
+    ? (await cdp(CDP.targetAttachToTarget, { targetId, flatten: true }))
         .sessionId
     : undefined;
   let finalExpression = expression;
@@ -67,13 +79,13 @@ export async function js(expression, targetId = undefined) {
 }
 
 async function runtimeEvaluate(
-  expression,
-  sessionId = undefined,
+  expression: string,
+  sessionId?: string,
   awaitPromise = false,
 ) {
   try {
     const response = await cdp(
-      "Runtime.evaluate",
+      CDP.runtimeEvaluate,
       {
         expression,
         returnByValue: true,
@@ -83,10 +95,8 @@ async function runtimeEvaluate(
     );
     return runtimeValue(response, expression);
   } catch (error) {
-    if (
-      error instanceof TimeoutError ||
-      /timed out/i.test(error?.message || "")
-    ) {
+    const message = error instanceof Error ? error.message : "";
+    if (error instanceof TimeoutError || /timed out/i.test(message)) {
       throw new Error(
         `Runtime.evaluate timed out; expression: ${jsSnippet(expression)}`,
       );
@@ -95,7 +105,7 @@ async function runtimeEvaluate(
   }
 }
 
-export function runtimeValue(response, expression) {
+export function runtimeValue(response: CdpResult, expression: string): any {
   const result = response.result || {};
   const details = response.exceptionDetails;
   if (details || result.subtype === "error") {
@@ -117,7 +127,10 @@ export function runtimeValue(response, expression) {
   return null;
 }
 
-function jsExceptionDescription(result, details) {
+function jsExceptionDescription(
+  result: CdpResult,
+  details: CdpResult | undefined,
+) {
   let desc = result.description;
   const exception = details?.exception;
   if (!desc && exception && typeof exception === "object") {
@@ -132,7 +145,7 @@ function jsExceptionDescription(result, details) {
   return desc || details?.text || "JavaScript evaluation failed";
 }
 
-export function decodeUnserializableJsValue(value) {
+export function decodeUnserializableJsValue(value: string) {
   if (value === "NaN") {
     return Number.NaN;
   }
@@ -151,12 +164,12 @@ export function decodeUnserializableJsValue(value) {
   return value;
 }
 
-function jsSnippet(expression, limit = 160) {
+function jsSnippet(expression: string, limit = 160) {
   const snippet = expression.trim().replace(/\n/g, "\\n");
   return snippet.length > limit ? `${snippet.slice(0, limit - 3)}...` : snippet;
 }
 
-export function hasReturnStatement(expression) {
+export function hasReturnStatement(expression: string) {
   let i = 0;
   let stateName = "code";
   let quote = "";
