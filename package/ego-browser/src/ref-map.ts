@@ -9,14 +9,21 @@ export class RefMap {
     this.addWithFrame(refId, backendNodeId, role, name, nth, undefined);
   }
 
-  addWithFrame(refId, backendNodeId, role, name, nth = undefined, frameId = undefined) {
+  addWithFrame(
+    refId,
+    backendNodeId,
+    role,
+    name,
+    nth = undefined,
+    frameId = undefined,
+  ) {
     this.map.set(refId, {
       backendNodeId,
       role,
       name,
       nth,
       selector: undefined,
-      frameId
+      frameId,
     });
   }
 
@@ -38,7 +45,7 @@ export function parseRef(input) {
   for (const candidate of [
     trimmed.startsWith("@") ? trimmed.slice(1) : null,
     trimmed.startsWith("ref=") ? trimmed.slice(4) : null,
-    trimmed
+    trimmed,
   ]) {
     if (candidate && /^\d+$/.test(candidate)) {
       return candidate;

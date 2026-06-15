@@ -39,11 +39,15 @@ export async function waitForLoad(options: WaitForLoadOptions = {}) {
  * @param {{timeout?: number, visible?: boolean}} [options]
  * @returns {Promise<boolean>} True when found before timeout.
  */
-export async function waitForElement(selector: string, options: WaitForElementOptions = {}) {
+export async function waitForElement(
+  selector: string,
+  options: WaitForElementOptions = {},
+) {
   const timeout = options.timeout ?? 10.0;
   const visible = options.visible ?? false;
   const deadline = state.now() + timeout * 1000;
-  const visibilityFn = "function(){if(typeof this.checkVisibility==='function')return this.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});const s=getComputedStyle(this);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}";
+  const visibilityFn =
+    "function(){if(typeof this.checkVisibility==='function')return this.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});const s=getComputedStyle(this);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}";
   while (state.now() < deadline) {
     let handle;
     try {
@@ -57,12 +61,16 @@ export async function waitForElement(selector: string, options: WaitForElementOp
     }
     try {
       if (!visible) return true;
-      const response = await cdp("Runtime.callFunctionOn", {
-        functionDeclaration: visibilityFn,
-        objectId: handle.objectId,
-        returnByValue: true,
-        awaitPromise: false
-      }, handle.sessionId);
+      const response = await cdp(
+        "Runtime.callFunctionOn",
+        {
+          functionDeclaration: visibilityFn,
+          objectId: handle.objectId,
+          returnByValue: true,
+          awaitPromise: false,
+        },
+        handle.sessionId,
+      );
       if (response.result?.value) return true;
     } catch {
       // visibility check failed (element raced away); treat as not-ready, keep polling.
@@ -85,7 +93,9 @@ export async function waitForElement(selector: string, options: WaitForElementOp
  * @param {{timeout?: number, idleMs?: number}} [options]
  * @returns {Promise<boolean>} True when idle before timeout.
  */
-export async function waitForNetworkIdle(options: WaitForNetworkIdleOptions = {}) {
+export async function waitForNetworkIdle(
+  options: WaitForNetworkIdleOptions = {},
+) {
   const timeout = options.timeout ?? 10.0;
   const idleMs = options.idleMs ?? 500;
   const deadline = state.now() + timeout * 1000;
@@ -103,7 +113,10 @@ export async function waitForNetworkIdle(options: WaitForNetworkIdleOptions = {}
         if (method === "Network.requestWillBeSent") {
           inflight.add(params.requestId);
           lastActivity = state.now();
-        } else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") {
+        } else if (
+          method === "Network.loadingFinished" ||
+          method === "Network.loadingFailed"
+        ) {
           inflight.delete(params.requestId);
           lastActivity = state.now();
         } else if (method.startsWith("Network.")) {

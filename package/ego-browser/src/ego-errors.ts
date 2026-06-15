@@ -4,7 +4,12 @@
  */
 
 export function assertNoEgoError(result, op: string) {
-  if (result && typeof result === "object" && "error" in result && result.error != null) {
+  if (
+    result &&
+    typeof result === "object" &&
+    "error" in result &&
+    result.error != null
+  ) {
     throw new Error(`${op}: ${formatEgoError(result.error)}`);
   }
   return result;

@@ -9,7 +9,10 @@ test("click resolves selector offsets without the public elementEval helper", as
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
       calls.push({ method, params, sessionId });
-      if (method === "Runtime.evaluate" && params.objectGroup === "ego-browser") {
+      if (
+        method === "Runtime.evaluate" &&
+        params.objectGroup === "ego-browser"
+      ) {
         return { result: { objectId: "object-1" } };
       }
       if (method === "Runtime.evaluate") {
@@ -19,7 +22,7 @@ test("click resolves selector offsets without the public elementEval helper", as
         return { result: { value: { x: 100, y: 200 } } };
       }
       return {};
-    }
+    },
   });
   try {
     await click({ selector: "#target", x: 12, y: 8 });
@@ -27,21 +30,37 @@ test("click resolves selector offsets without the public elementEval helper", as
     restore();
   }
 
-  const callFunction = calls.find((call) => call.method === "Runtime.callFunctionOn");
+  const callFunction = calls.find(
+    (call) => call.method === "Runtime.callFunctionOn",
+  );
   assert.equal(callFunction.params.objectId, "object-1");
-  assert.match(callFunction.params.functionDeclaration, /getBoundingClientRect/);
+  assert.match(
+    callFunction.params.functionDeclaration,
+    /getBoundingClientRect/,
+  );
 
-  assert.ok(calls.some((call) => call.method === "Runtime.releaseObject" && call.params.objectId === "object-1"));
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.method === "Runtime.releaseObject" &&
+        call.params.objectId === "object-1",
+    ),
+  );
 
-  const mouseEvents = calls.filter((call) => call.method === "Input.dispatchMouseEvent");
-  assert.deepEqual(mouseEvents.map((call) => ({
-    type: call.params.type,
-    x: call.params.x,
-    y: call.params.y
-  })), [
-    { type: "mousePressed", x: 112, y: 208 },
-    { type: "mouseReleased", x: 112, y: 208 }
-  ]);
+  const mouseEvents = calls.filter(
+    (call) => call.method === "Input.dispatchMouseEvent",
+  );
+  assert.deepEqual(
+    mouseEvents.map((call) => ({
+      type: call.params.type,
+      x: call.params.x,
+      y: call.params.y,
+    })),
+    [
+      { type: "mousePressed", x: 112, y: 208 },
+      { type: "mouseReleased", x: 112, y: 208 },
+    ],
+  );
 });
 
 test("scroll defaults to scrolling down (positive deltaY, DOM wheel convention)", async () => {
@@ -54,7 +73,7 @@ test("scroll defaults to scrolling down (positive deltaY, DOM wheel convention)"
     cdpOverride(method, params) {
       calls.push({ method, params });
       return {};
-    }
+    },
   });
   try {
     await scroll();
@@ -79,7 +98,7 @@ test("scroll falls back to DOM scrolling only when wheel dispatch is unsupported
         return { result: { value: { x: 0, y: 450 } } };
       }
       return {};
-    }
+    },
   });
   try {
     const result = await scroll({ x: 50, y: 60, dx: 10, dy: 450 });
@@ -94,7 +113,7 @@ test("scroll falls back to DOM scrolling only when wheel dispatch is unsupported
     x: 50,
     y: 60,
     deltaX: 10,
-    deltaY: 450
+    deltaY: 450,
   });
   assert.equal(calls[1].method, "Runtime.evaluate");
   assert.match(calls[1].params.expression, /window\.scrollBy/);
@@ -112,7 +131,7 @@ test("scroll propagates wheel dispatch timeouts instead of silently degrading", 
         throw new Error("CDP request timed out: Input.dispatchMouseEvent");
       }
       return {};
-    }
+    },
   });
   try {
     await assert.rejects(() => scroll({ dy: 450 }), /timed out/);
@@ -129,7 +148,7 @@ test("scroll propagates user-control errors from wheel dispatch", async () => {
         throw new Error("user is controlling this task space");
       }
       return {};
-    }
+    },
   });
   try {
     await assert.rejects(() => scroll(), /user is controlling/);

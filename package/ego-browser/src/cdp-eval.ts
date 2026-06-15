@@ -15,7 +15,10 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
   const result = state.cdpOverride
     ? await state.cdpOverride(method, params, sessionId)
     : (await send({ method, params, session_id: sessionId })).result || {};
-  if (!sessionId && (method === "Network.enable" || method === "Network.disable")) {
+  if (
+    !sessionId &&
+    (method === "Network.enable" || method === "Network.disable")
+  ) {
     // Mirror the default session's Network domain state so helpers like
     // waitForNetworkIdle can restore it instead of tearing down a domain
     // the caller still relies on for drainEvents().
@@ -39,20 +42,23 @@ export async function js(expression, targetId = undefined) {
       hasWarnedAboutFunctionJs = true;
       process.stderr.write(
         `[ego-browser] js() received a function and auto-wrapped it (${jsSnippet(source, 80)}).\n` +
-        `  js() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
-        `  not a Puppeteer/Playwright-style callable. Auto-wrap does NOT capture closure\n` +
-        `  variables and has NO args channel.\n` +
-        `  Prefer:\n` +
-        `    js(\`<expression>\`)  // pure expression or explicit IIFE\n`
+          `  js() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
+          `  not a Puppeteer/Playwright-style callable. Auto-wrap does NOT capture closure\n` +
+          `  variables and has NO args channel.\n` +
+          `  Prefer:\n` +
+          `    js(\`<expression>\`)  // pure expression or explicit IIFE\n`,
       );
     }
     expression = `(${source})()`;
   } else if (typeof expression !== "string") {
     throw new TypeError(
-      `js() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`
+      `js() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`,
     );
   }
-  const sessionId = targetId ? (await cdp("Target.attachToTarget", { targetId, flatten: true })).sessionId : undefined;
+  const sessionId = targetId
+    ? (await cdp("Target.attachToTarget", { targetId, flatten: true }))
+        .sessionId
+    : undefined;
   let finalExpression = expression;
   if (hasReturnStatement(expression) && !expression.trim().startsWith("(")) {
     finalExpression = `(function(){${expression}})()`;
@@ -60,17 +66,30 @@ export async function js(expression, targetId = undefined) {
   return runtimeEvaluate(finalExpression, sessionId, true);
 }
 
-async function runtimeEvaluate(expression, sessionId = undefined, awaitPromise = false) {
+async function runtimeEvaluate(
+  expression,
+  sessionId = undefined,
+  awaitPromise = false,
+) {
   try {
-    const response = await cdp("Runtime.evaluate", {
-      expression,
-      returnByValue: true,
-      awaitPromise
-    }, sessionId);
+    const response = await cdp(
+      "Runtime.evaluate",
+      {
+        expression,
+        returnByValue: true,
+        awaitPromise,
+      },
+      sessionId,
+    );
     return runtimeValue(response, expression);
   } catch (error) {
-    if (error instanceof TimeoutError || /timed out/i.test(error?.message || "")) {
-      throw new Error(`Runtime.evaluate timed out; expression: ${jsSnippet(expression)}`);
+    if (
+      error instanceof TimeoutError ||
+      /timed out/i.test(error?.message || "")
+    ) {
+      throw new Error(
+        `Runtime.evaluate timed out; expression: ${jsSnippet(expression)}`,
+      );
     }
     throw error;
   }
@@ -81,10 +100,13 @@ export function runtimeValue(response, expression) {
   const details = response.exceptionDetails;
   if (details || result.subtype === "error") {
     const desc = jsExceptionDescription(result, details);
-    const loc = details?.lineNumber !== undefined && details?.columnNumber !== undefined
-      ? ` at line ${details.lineNumber}, column ${details.columnNumber}`
-      : "";
-    throw new Error(`JavaScript evaluation failed${loc}: ${desc}; expression: ${jsSnippet(expression)}`);
+    const loc =
+      details?.lineNumber !== undefined && details?.columnNumber !== undefined
+        ? ` at line ${details.lineNumber}, column ${details.columnNumber}`
+        : "";
+    throw new Error(
+      `JavaScript evaluation failed${loc}: ${desc}; expression: ${jsSnippet(expression)}`,
+    );
   }
   if (Object.hasOwn(result, "value")) {
     return result.value;
@@ -142,7 +164,7 @@ export function hasReturnStatement(expression) {
     const ch = expression[i];
     const next = expression[i + 1] || "";
     if (stateName === "code") {
-      if (ch === "'" || ch === "\"" || ch === "`") {
+      if (ch === "'" || ch === '"' || ch === "`") {
         stateName = "string";
         quote = ch;
         i += 1;

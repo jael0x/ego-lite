@@ -4,9 +4,20 @@ import { tmpdir } from "node:os";
 import { state } from "../state.js";
 import { cdp, js } from "../cdp-eval.js";
 import { pageInfo } from "./nav.js";
-import { browserEgo, browserSnapshotRefsToRefMap, drainBrowserEvents, ensureSession, isBrowserRuntime, pendingDialog } from "../browser-runtime.js";
+import {
+  browserEgo,
+  browserSnapshotRefsToRefMap,
+  drainBrowserEvents,
+  ensureSession,
+  isBrowserRuntime,
+  pendingDialog,
+} from "../browser-runtime.js";
 import { resolveElementCenter } from "../element-resolver.js";
-import { browserRefMap, ensureRefMapForRef, registerSnapshotForRefRefresh } from "../ref-state.js";
+import {
+  browserRefMap,
+  ensureRefMapForRef,
+  registerSnapshotForRefRefresh,
+} from "../ref-state.js";
 
 type SnapshotOptions = {
   scope?: "only_within_viewport" | "full_page";
@@ -51,14 +62,19 @@ export async function snapshotText(options: SnapshotOptions = {}) {
   const result = await snapshot({
     scope: options.scope ?? "full_page",
     includeActionMarks: options.includeActionMarks ?? true,
-    includeStableLocator: options.includeStableLocator ?? true
+    includeStableLocator: options.includeStableLocator ?? true,
   });
   return result.content || "";
 }
 
 export async function elementCenter(selectorOrRef) {
   await ensureRefMapForRef(selectorOrRef);
-  return resolveElementCenter({ sendRaw: cdp }, undefined, browserRefMap, selectorOrRef);
+  return resolveElementCenter(
+    { sendRaw: cdp },
+    undefined,
+    browserRefMap,
+    selectorOrRef,
+  );
 }
 
 // Sequence number for default screenshot file names. Combined with the pid it
@@ -66,12 +82,18 @@ export async function elementCenter(selectorOrRef) {
 // other's shots in the shared tmpdir, and successive shots in one run distinct.
 let screenshotSeq = 0;
 
-export async function captureScreenshot(path = join(tmpdir(), `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`), options: CaptureScreenshotOptions = {}) {
+export async function captureScreenshot(
+  path = join(
+    tmpdir(),
+    `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`,
+  ),
+  options: CaptureScreenshotOptions = {},
+) {
   const full = options.full ?? false;
   const raw = options.raw ?? false;
   const params: any = {
     format: "png",
-    captureBeyondViewport: full
+    captureBeyondViewport: full,
   };
   if (raw) {
     if (options.clip) {
@@ -96,7 +118,7 @@ export async function captureScreenshot(path = join(tmpdir(), `ego-browser-shot-
           y: 0,
           width: full ? info.pw : info.w,
           height: full ? info.ph : info.h,
-          scale: cssScale
+          scale: cssScale,
         };
       }
     }
