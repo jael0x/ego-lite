@@ -10,6 +10,7 @@ import {
   listTaskSpaces,
   useOrCreateTaskSpace,
   switchTaskSpace,
+  waitForAgentControl,
 } from "../dist/src/helpers.js";
 
 function withEgo(ego, fn) {
@@ -689,6 +690,66 @@ test("useOrCreateTaskSpace rejects unknown ownership", async () => {
       await assert.rejects(
         () => useOrCreateTaskSpace("checkout-flow"),
         /ownership "shared"/,
+      );
+    },
+  );
+});
+
+// The probe in waitForAgentControl keys on ego.snapshot()'s rejection carrying
+// error_code === EGO_TASK_SPACE_USER_IN_CONTROL (the documented contract), not on
+// message wording. These tests pin that contract so a runtime that stops setting
+// the code surfaces as a failing test rather than a silent regression.
+function taskSpaceEgo(snapshot) {
+  return {
+    async listTaskSpaces() {
+      return {
+        taskSpaces: [{ taskId: "t", id: 1, name: "t", ownership: "agent" }],
+      };
+    },
+    async useTaskSpace() {
+      return 1;
+    },
+    snapshot,
+  };
+}
+
+test("waitForAgentControl retries while snapshot reports user control", async () => {
+  const restore = helperExports.__testing.setOverrides({
+    sleep: () => Promise.resolve(),
+  });
+  let calls = 0;
+  try {
+    await withEgo(
+      taskSpaceEgo(async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw Object.assign(new Error("anything at all"), {
+            error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+          });
+        }
+        return { content: "" };
+      }),
+      async () => {
+        await waitForAgentControl("t", { interval: 0, timeout: 5 });
+      },
+    );
+  } finally {
+    restore();
+  }
+  assert.equal(calls, 3);
+});
+
+test("waitForAgentControl propagates non-user-control snapshot errors", async () => {
+  await withEgo(
+    taskSpaceEgo(async () => {
+      throw Object.assign(new Error("snapshot failed"), {
+        error_code: "EGO_SNAPSHOT_FAILED",
+      });
+    }),
+    async () => {
+      await assert.rejects(
+        () => waitForAgentControl("t", { interval: 0, timeout: 5 }),
+        /snapshot failed/,
       );
     },
   );
