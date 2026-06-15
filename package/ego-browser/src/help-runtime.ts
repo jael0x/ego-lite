@@ -20,9 +20,16 @@ type HelperDoc = {
   async: boolean;
 };
 
+// Justified `any`: the helpers below walk a heterogeneous acorn ESTree AST,
+// reaching into many node shapes (FunctionDeclaration, VariableDeclaration,
+// patterns, literals). acorn does not ship narrow per-node types for a generic
+// walk, so nodes are treated as `any` rather than mirroring the grammar here.
 let cache: Map<string, HelperDoc> | null = null;
 
-export function help(helpers: Record<string, unknown>, ...names: string[]): HelperDoc | HelperDoc[] | string {
+export function help(
+  helpers: Record<string, unknown>,
+  ...names: string[]
+): HelperDoc | HelperDoc[] | string {
   const docs = getDocsMap();
   if (names.length === 0) {
     const all = [...docs.values()].filter((d) => d.name in helpers);
@@ -33,7 +40,17 @@ export function help(helpers: Record<string, unknown>, ...names: string[]): Help
     if (!doc) return `Unknown helper: ${names[0]}`;
     return doc;
   }
-  return names.map((n) => docs.get(n) || { name: n, signature: n, description: null, params: [], returns: null, async: false });
+  return names.map(
+    (n) =>
+      docs.get(n) || {
+        name: n,
+        signature: n,
+        description: null,
+        params: [],
+        returns: null,
+        async: false,
+      },
+  );
 }
 
 export function formatHelp(doc: HelperDoc): string {
@@ -46,7 +63,9 @@ export function formatHelp(doc: HelperDoc): string {
     const type = p.type ? `: ${p.type}` : "";
     const desc = p.description ? ` — ${p.description}` : "";
     const def = p.default ? ` (default: ${p.default})` : "";
-    lines.push(`@param ${p.rest ? "..." : ""}${p.name}${opt}${type}${desc}${def}`);
+    lines.push(
+      `@param ${p.rest ? "..." : ""}${p.name}${opt}${type}${desc}${def}`,
+    );
   }
   if (doc.returns) {
     lines.push(`@returns ${doc.returns}`);
@@ -69,7 +88,7 @@ function getDocsMap(): Map<string, HelperDoc> {
       ecmaVersion: "latest",
       sourceType: "module",
       onComment: comments,
-      locations: true
+      locations: true,
     });
   } catch {
     return cache;
@@ -92,11 +111,13 @@ function getDocsMap(): Map<string, HelperDoc> {
 
     const params = extractParams(node, parsed);
     const isAsync = node.async === true;
-    const paramSig = params.map((p) => {
-      const rest = p.rest ? "..." : "";
-      const opt = p.optional ? "?" : "";
-      return `${rest}${p.name}${opt}`;
-    }).join(", ");
+    const paramSig = params
+      .map((p) => {
+        const rest = p.rest ? "..." : "";
+        const opt = p.optional ? "?" : "";
+        return `${rest}${p.name}${opt}`;
+      })
+      .join(", ");
     const retStr = parsed?.returns || (isAsync ? "Promise<...>" : null);
     const signature = `${name}(${paramSig})${retStr ? ` → ${retStr}` : ""}`;
 
@@ -106,7 +127,7 @@ function getDocsMap(): Map<string, HelperDoc> {
       description: parsed?.description || null,
       params,
       returns: retStr,
-      async: isAsync
+      async: isAsync,
     });
   });
 
@@ -131,11 +152,15 @@ function readSelf(): string | null {
 
 function walkFunctions(node: any, visitor: (node: any) => void) {
   if (!node || typeof node !== "object") return;
-  if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
+  if (
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression"
+  ) {
     visitor(node);
   }
   for (const key of Object.keys(node)) {
-    if (key === "type" || key === "loc" || key === "start" || key === "end") continue;
+    if (key === "type" || key === "loc" || key === "start" || key === "end")
+      continue;
     const child = node[key];
     if (Array.isArray(child)) {
       for (const item of child) {
@@ -147,7 +172,10 @@ function walkFunctions(node: any, visitor: (node: any) => void) {
   }
 }
 
-function walkAliases(node: any, visitor: (name: string, target: string) => void) {
+function walkAliases(
+  node: any,
+  visitor: (name: string, target: string) => void,
+) {
   if (!node || typeof node !== "object") return;
   if (node.type === "VariableDeclaration") {
     for (const decl of node.declarations || []) {
@@ -157,7 +185,8 @@ function walkAliases(node: any, visitor: (name: string, target: string) => void)
     }
   }
   for (const key of Object.keys(node)) {
-    if (key === "type" || key === "loc" || key === "start" || key === "end") continue;
+    if (key === "type" || key === "loc" || key === "start" || key === "end")
+      continue;
     const child = node[key];
     if (Array.isArray(child)) {
       for (const item of child) {
@@ -181,14 +210,18 @@ function extractParams(node: any, jsdoc: ParsedJSDoc | null): ParamInfo[] {
     return {
       ...info,
       type: jsdocParam?.type || null,
-      description: jsdocParam?.description || null
+      description: jsdocParam?.description || null,
     };
   });
 }
 
 type ParsedJSDoc = {
   description: string | null;
-  params: Array<{ name: string; type: string | null; description: string | null }>;
+  params: Array<{
+    name: string;
+    type: string | null;
+    description: string | null;
+  }>;
   returns: string | null;
 };
 
@@ -199,10 +232,16 @@ function parseJSDoc(raw: string): ParsedJSDoc {
   let returns: string | null = null;
 
   for (const line of lines) {
-    const paramMatch = line.match(/^@param\s+(?:\{([^}]*)\}\s+)?(\[?\w+\]?)(?:(?:\s+[-–—]\s*|\s+)(.+))?\s*$/);
+    const paramMatch = line.match(
+      /^@param\s+(?:\{([^}]*)\}\s+)?(\[?\w+\]?)(?:(?:\s+[-–—]\s*|\s+)(.+))?\s*$/,
+    );
     if (paramMatch) {
       const name = paramMatch[2].replace(/^\[|\]$/g, "");
-      params.push({ name, type: paramMatch[1] || null, description: paramMatch[3] || null });
+      params.push({
+        name,
+        type: paramMatch[1] || null,
+        description: paramMatch[3] || null,
+      });
       continue;
     }
     const returnsMatch = line.match(/^@returns?\s+(?:\{([^}]*)\}\s*)?(.*)/);
@@ -217,11 +256,16 @@ function parseJSDoc(raw: string): ParsedJSDoc {
   return {
     description: descLines.join(" ").trim() || null,
     params,
-    returns
+    returns,
   };
 }
 
-function resolveParam(node: any): { name: string; optional: boolean; rest: boolean; default: string | null } {
+function resolveParam(node: any): {
+  name: string;
+  optional: boolean;
+  rest: boolean;
+  default: string | null;
+} {
   if (node.type === "RestElement") {
     const inner = resolveParam(node.argument);
     return { ...inner, rest: true, optional: true };
@@ -235,7 +279,9 @@ function resolveParam(node: any): { name: string; optional: boolean; rest: boole
     return { name: node.name, optional: false, rest: false, default: null };
   }
   if (node.type === "ObjectPattern") {
-    const props = (node.properties || []).map((p: any) => p.key?.name || "?").join(", ");
+    const props = (node.properties || [])
+      .map((p: any) => p.key?.name || "?")
+      .join(", ");
     return { name: `{${props}}`, optional: false, rest: false, default: null };
   }
   if (node.type === "ArrayPattern") {
