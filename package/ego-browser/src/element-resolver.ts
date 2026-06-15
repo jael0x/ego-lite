@@ -20,18 +20,36 @@ function matchCountKind(message: string): "transient" | "permanent" {
   return n > 1 ? "permanent" : "transient";
 }
 
-export async function resolveElementCenter(cdp, sessionId, refMap, selectorOrRef, iframeSessions = new Map()) {
+export async function resolveElementCenter(
+  cdp,
+  sessionId,
+  refMap,
+  selectorOrRef,
+  iframeSessions = new Map(),
+) {
   const refId = parseRef(selectorOrRef);
   if (refId) {
     const entry = refMap.get(refId);
     if (!entry) {
       throw new ElementResolutionError(`Unknown ref: ${refId}`, "transient");
     }
-    const effectiveSessionId = resolveFrameSession(entry.frameId, sessionId, iframeSessions);
+    const effectiveSessionId = resolveFrameSession(
+      entry.frameId,
+      sessionId,
+      iframeSessions,
+    );
     if (entry.backendNodeId !== undefined && entry.backendNodeId !== null) {
       try {
-        const result = await send(cdp, "DOM.getBoxModel", { backendNodeId: entry.backendNodeId }, effectiveSessionId);
-        return { ...boxModelCenter(result.model), sessionId: effectiveSessionId };
+        const result = await send(
+          cdp,
+          "DOM.getBoxModel",
+          { backendNodeId: entry.backendNodeId },
+          effectiveSessionId,
+        );
+        return {
+          ...boxModelCenter(result.model),
+          sessionId: effectiveSessionId,
+        };
       } catch (error) {
         if (error instanceof ElementResolutionError) {
           // The node resolved but has no usable box model (not rendered yet).
@@ -42,8 +60,21 @@ export async function resolveElementCenter(cdp, sessionId, refMap, selectorOrRef
         // The backend node can become stale after DOM updates; fall back to role/name lookup below.
       }
     }
-    const backendNodeId = await findBackendNodeIdByRoleName(cdp, sessionId, entry.role, entry.name, entry.nth, entry.frameId, iframeSessions);
-    const result = await send(cdp, "DOM.getBoxModel", { backendNodeId }, effectiveSessionId);
+    const backendNodeId = await findBackendNodeIdByRoleName(
+      cdp,
+      sessionId,
+      entry.role,
+      entry.name,
+      entry.nth,
+      entry.frameId,
+      iframeSessions,
+    );
+    const result = await send(
+      cdp,
+      "DOM.getBoxModel",
+      { backendNodeId },
+      effectiveSessionId,
+    );
     return { ...boxModelCenter(result.model), sessionId: effectiveSessionId };
   }
 
@@ -52,35 +83,61 @@ export async function resolveElementCenter(cdp, sessionId, refMap, selectorOrRef
     return resolveLocatorCenter(cdp, sessionId, locator);
   }
 
-  const result = await send(cdp, "Runtime.evaluate", {
-    expression: buildSelectorCenterJs(selectorOrRef),
-    returnByValue: true,
-    awaitPromise: false
-  }, sessionId);
+  const result = await send(
+    cdp,
+    "Runtime.evaluate",
+    {
+      expression: buildSelectorCenterJs(selectorOrRef),
+      returnByValue: true,
+      awaitPromise: false,
+    },
+    sessionId,
+  );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(`Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`, "permanent");
+    throw new ElementResolutionError(
+      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
+      "permanent",
+    );
   }
   const value = result.result?.value;
   if (typeof value?.x !== "number" || typeof value?.y !== "number") {
-    throw new ElementResolutionError(`Element not found: ${selectorOrRef}`, "transient");
+    throw new ElementResolutionError(
+      `Element not found: ${selectorOrRef}`,
+      "transient",
+    );
   }
   return { x: value.x, y: value.y, sessionId };
 }
 
-export async function resolveElementObjectId(cdp, sessionId, refMap, selectorOrRef, iframeSessions = new Map()) {
+export async function resolveElementObjectId(
+  cdp,
+  sessionId,
+  refMap,
+  selectorOrRef,
+  iframeSessions = new Map(),
+) {
   const refId = parseRef(selectorOrRef);
   if (refId) {
     const entry = refMap.get(refId);
     if (!entry) {
       throw new ElementResolutionError(`Unknown ref: ${refId}`, "transient");
     }
-    const effectiveSessionId = resolveFrameSession(entry.frameId, sessionId, iframeSessions);
+    const effectiveSessionId = resolveFrameSession(
+      entry.frameId,
+      sessionId,
+      iframeSessions,
+    );
     if (entry.backendNodeId !== undefined && entry.backendNodeId !== null) {
       try {
-        const result = await send(cdp, "DOM.resolveNode", {
-          backendNodeId: entry.backendNodeId,
-          objectGroup: "ego-browser"
-        }, effectiveSessionId);
+        const result = await send(
+          cdp,
+          "DOM.resolveNode",
+          {
+            backendNodeId: entry.backendNodeId,
+            objectGroup: "ego-browser",
+          },
+          effectiveSessionId,
+        );
         const objectId = result.object?.objectId;
         if (objectId) {
           return { objectId, sessionId: effectiveSessionId };
@@ -89,11 +146,27 @@ export async function resolveElementObjectId(cdp, sessionId, refMap, selectorOrR
         // The backend node can become stale after DOM updates; fall back to role/name lookup below.
       }
     }
-    const backendNodeId = await findBackendNodeIdByRoleName(cdp, sessionId, entry.role, entry.name, entry.nth, entry.frameId, iframeSessions);
-    const result = await send(cdp, "DOM.resolveNode", { backendNodeId, objectGroup: "ego-browser" }, effectiveSessionId);
+    const backendNodeId = await findBackendNodeIdByRoleName(
+      cdp,
+      sessionId,
+      entry.role,
+      entry.name,
+      entry.nth,
+      entry.frameId,
+      iframeSessions,
+    );
+    const result = await send(
+      cdp,
+      "DOM.resolveNode",
+      { backendNodeId, objectGroup: "ego-browser" },
+      effectiveSessionId,
+    );
     const objectId = result.object?.objectId;
     if (!objectId) {
-      throw new ElementResolutionError(`No objectId for ref ${refId}`, "permanent");
+      throw new ElementResolutionError(
+        `No objectId for ref ${refId}`,
+        "permanent",
+      );
     }
     return { objectId, sessionId: effectiveSessionId };
   }
@@ -103,18 +176,29 @@ export async function resolveElementObjectId(cdp, sessionId, refMap, selectorOrR
     return resolveLocatorObjectId(cdp, sessionId, locator);
   }
 
-  const result = await send(cdp, "Runtime.evaluate", {
-    expression: buildFindElementJs(selectorOrRef),
-    returnByValue: false,
-    awaitPromise: false,
-    objectGroup: "ego-browser"
-  }, sessionId);
+  const result = await send(
+    cdp,
+    "Runtime.evaluate",
+    {
+      expression: buildFindElementJs(selectorOrRef),
+      returnByValue: false,
+      awaitPromise: false,
+      objectGroup: "ego-browser",
+    },
+    sessionId,
+  );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(`Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`, "permanent");
+    throw new ElementResolutionError(
+      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
+      "permanent",
+    );
   }
   const objectId = result.result?.objectId;
   if (!objectId) {
-    throw new ElementResolutionError(`Element not found: ${selectorOrRef}`, "transient");
+    throw new ElementResolutionError(
+      `Element not found: ${selectorOrRef}`,
+      "transient",
+    );
   }
   return { objectId, sessionId };
 }
@@ -131,91 +215,176 @@ function resolveFrameSession(frameId, sessionId, iframeSessions) {
 
 async function resolveLocatorCenter(cdp, sessionId, locator) {
   if (locator.kind === "role") {
-    const backendNodeId = await findUniqueBackendNodeIdByRoleName(cdp, sessionId, locator.role, locator.name);
-    const result = await send(cdp, "DOM.getBoxModel", { backendNodeId }, sessionId);
+    const backendNodeId = await findUniqueBackendNodeIdByRoleName(
+      cdp,
+      sessionId,
+      locator.role,
+      locator.name,
+    );
+    const result = await send(
+      cdp,
+      "DOM.getBoxModel",
+      { backendNodeId },
+      sessionId,
+    );
     return { ...boxModelCenter(result.model), sessionId };
   }
-  const result = await send(cdp, "Runtime.evaluate", {
-    expression: buildLocatorCenterJs(locator),
-    returnByValue: true,
-    awaitPromise: false
-  }, sessionId);
+  const result = await send(
+    cdp,
+    "Runtime.evaluate",
+    {
+      expression: buildLocatorCenterJs(locator),
+      returnByValue: true,
+      awaitPromise: false,
+    },
+    sessionId,
+  );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(`Invalid selector: ${locator.raw}: ${exceptionText(result)}`, "permanent");
+    throw new ElementResolutionError(
+      `Invalid selector: ${locator.raw}: ${exceptionText(result)}`,
+      "permanent",
+    );
   }
   const value = result.result?.value;
   if (value?.error) {
     throw new ElementResolutionError(value.error, matchCountKind(value.error));
   }
   if (typeof value?.x !== "number" || typeof value?.y !== "number") {
-    throw new ElementResolutionError(`Element not found: ${locator.raw}`, "transient");
+    throw new ElementResolutionError(
+      `Element not found: ${locator.raw}`,
+      "transient",
+    );
   }
   return { x: value.x, y: value.y, sessionId };
 }
 
 async function resolveLocatorObjectId(cdp, sessionId, locator) {
   if (locator.kind === "role") {
-    const backendNodeId = await findUniqueBackendNodeIdByRoleName(cdp, sessionId, locator.role, locator.name);
-    const result = await send(cdp, "DOM.resolveNode", { backendNodeId, objectGroup: "ego-browser" }, sessionId);
+    const backendNodeId = await findUniqueBackendNodeIdByRoleName(
+      cdp,
+      sessionId,
+      locator.role,
+      locator.name,
+    );
+    const result = await send(
+      cdp,
+      "DOM.resolveNode",
+      { backendNodeId, objectGroup: "ego-browser" },
+      sessionId,
+    );
     const objectId = result.object?.objectId;
     if (!objectId) {
-      throw new ElementResolutionError(`No objectId for locator ${locator.raw}`, "permanent");
+      throw new ElementResolutionError(
+        `No objectId for locator ${locator.raw}`,
+        "permanent",
+      );
     }
     return { objectId, sessionId };
   }
   const count = await locatorCount(cdp, sessionId, locator);
   if (count === 0) {
-    throw new ElementResolutionError(`Locator ${locator.raw} matched 0 elements`, "transient");
+    throw new ElementResolutionError(
+      `Locator ${locator.raw} matched 0 elements`,
+      "transient",
+    );
   }
   if (count > 1) {
-    throw new ElementResolutionError(`Locator ${locator.raw} matched ${count} elements`, "permanent");
+    throw new ElementResolutionError(
+      `Locator ${locator.raw} matched ${count} elements`,
+      "permanent",
+    );
   }
-  const result = await send(cdp, "Runtime.evaluate", {
-    expression: buildLocatorFindJs(locator),
-    returnByValue: false,
-    awaitPromise: false,
-    objectGroup: "ego-browser"
-  }, sessionId);
+  const result = await send(
+    cdp,
+    "Runtime.evaluate",
+    {
+      expression: buildLocatorFindJs(locator),
+      returnByValue: false,
+      awaitPromise: false,
+      objectGroup: "ego-browser",
+    },
+    sessionId,
+  );
   const objectId = result.result?.objectId;
   if (!objectId) {
-    throw new ElementResolutionError(`Element not found: ${locator.raw}`, "transient");
+    throw new ElementResolutionError(
+      `Element not found: ${locator.raw}`,
+      "transient",
+    );
   }
   return { objectId, sessionId };
 }
 
 async function locatorCount(cdp, sessionId, locator) {
-  const result = await send(cdp, "Runtime.evaluate", {
-    expression: buildLocatorCountJs(locator),
-    returnByValue: true,
-    awaitPromise: false
-  }, sessionId);
+  const result = await send(
+    cdp,
+    "Runtime.evaluate",
+    {
+      expression: buildLocatorCountJs(locator),
+      returnByValue: true,
+      awaitPromise: false,
+    },
+    sessionId,
+  );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(`Invalid selector: ${locator.raw}: ${exceptionText(result)}`, "permanent");
+    throw new ElementResolutionError(
+      `Invalid selector: ${locator.raw}: ${exceptionText(result)}`,
+      "permanent",
+    );
   }
   return Number(result.result?.value || 0);
 }
 
-async function findBackendNodeIdByRoleName(cdp, sessionId, role, name, nth = undefined, frameId = undefined, iframeSessions = new Map()) {
-  const [params, effectiveSessionId] = resolveAxSession(frameId, sessionId, iframeSessions);
-  const result = await send(cdp, "Accessibility.getFullAXTree", params, effectiveSessionId);
+async function findBackendNodeIdByRoleName(
+  cdp,
+  sessionId,
+  role,
+  name,
+  nth = undefined,
+  frameId = undefined,
+  iframeSessions = new Map(),
+) {
+  const [params, effectiveSessionId] = resolveAxSession(
+    frameId,
+    sessionId,
+    iframeSessions,
+  );
+  const result = await send(
+    cdp,
+    "Accessibility.getFullAXTree",
+    params,
+    effectiveSessionId,
+  );
   const nthIndex = nth ?? 0;
   let matchCount = 0;
   for (const node of result.nodes || []) {
     if (node.ignored) {
       continue;
     }
-    if (extractAxString(node.role) !== role || extractAxString(node.name) !== name) {
+    if (
+      extractAxString(node.role) !== role ||
+      extractAxString(node.name) !== name
+    ) {
       continue;
     }
     if (matchCount === nthIndex) {
-      if (node.backendDOMNodeId === undefined || node.backendDOMNodeId === null) {
-        throw new ElementResolutionError(`AX node has no backendDOMNodeId for role=${role} name=${name}`, "permanent");
+      if (
+        node.backendDOMNodeId === undefined ||
+        node.backendDOMNodeId === null
+      ) {
+        throw new ElementResolutionError(
+          `AX node has no backendDOMNodeId for role=${role} name=${name}`,
+          "permanent",
+        );
       }
       return node.backendDOMNodeId;
     }
     matchCount += 1;
   }
-  throw new ElementResolutionError(`Could not locate element with role=${role} name=${name}`, "transient");
+  throw new ElementResolutionError(
+    `Could not locate element with role=${role} name=${name}`,
+    "transient",
+  );
 }
 
 async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
@@ -225,19 +394,31 @@ async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
     if (node.ignored) {
       continue;
     }
-    if (extractAxString(node.role) === role && extractAxString(node.name) === name) {
+    if (
+      extractAxString(node.role) === role &&
+      extractAxString(node.name) === name
+    ) {
       matches.push(node);
     }
   }
   if (matches.length === 0) {
-    throw new ElementResolutionError(`Locator role:${role}[name=${JSON.stringify(name)}] matched 0 elements`, "transient");
+    throw new ElementResolutionError(
+      `Locator role:${role}[name=${JSON.stringify(name)}] matched 0 elements`,
+      "transient",
+    );
   }
   if (matches.length > 1) {
-    throw new ElementResolutionError(`Locator role:${role}[name=${JSON.stringify(name)}] matched ${matches.length} elements`, "permanent");
+    throw new ElementResolutionError(
+      `Locator role:${role}[name=${JSON.stringify(name)}] matched ${matches.length} elements`,
+      "permanent",
+    );
   }
   const backendNodeId = matches[0].backendDOMNodeId;
   if (backendNodeId === undefined || backendNodeId === null) {
-    throw new ElementResolutionError(`AX node has no backendDOMNodeId for role=${role} name=${name}`, "permanent");
+    throw new ElementResolutionError(
+      `AX node has no backendDOMNodeId for role=${role} name=${name}`,
+      "permanent",
+    );
   }
   return backendNodeId;
 }
@@ -246,7 +427,10 @@ function resolveAxSession(frameId, sessionId, iframeSessions) {
   if (!frameId) {
     return [{}, sessionId];
   }
-  const iframeSession = iframeSessions instanceof Map ? iframeSessions.get(frameId) : iframeSessions?.[frameId];
+  const iframeSession =
+    iframeSessions instanceof Map
+      ? iframeSessions.get(frameId)
+      : iframeSessions?.[frameId];
   if (iframeSession) {
     return [{}, iframeSession];
   }
@@ -326,7 +510,7 @@ function parseLocator(input) {
       kind: "role",
       role: roleMatch[1],
       name: parseLocatorName(roleMatch[2]),
-      raw: value
+      raw: value,
     };
   }
   return null;
@@ -334,7 +518,7 @@ function parseLocator(input) {
 
 function parseLocatorName(raw) {
   const trimmed = raw.trim();
-  if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     try {
       return JSON.parse(trimmed);
     } catch {
@@ -353,11 +537,14 @@ function boxModelCenter(model: any = {}) {
     // Returning a fake (0,0) here would silently click the viewport corner.
     // Treat a missing/degenerate box model as "element not ready" so callers
     // with retry semantics (waitForElement, ref fallback) can poll.
-    throw new ElementResolutionError("Element has no box model (not rendered or zero-sized)", "transient");
+    throw new ElementResolutionError(
+      "Element has no box model (not rendered or zero-sized)",
+      "transient",
+    );
   }
   return {
     x: (content[0] + content[2] + content[4] + content[6]) / 4,
-    y: (content[1] + content[3] + content[5] + content[7]) / 4
+    y: (content[1] + content[3] + content[5] + content[7]) / 4,
   };
 }
 

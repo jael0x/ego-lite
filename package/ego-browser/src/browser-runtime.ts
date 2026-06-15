@@ -5,15 +5,19 @@ const SESSION_TTL_MS = 2000;
 // Upper bound for buffered CDP events. The runtime can be long-lived (installEgoSdk
 // inside the browser); without a cap, undrained events grow without bound.
 const MAX_BUFFERED_EVENTS = 10000;
-const SESSION_LOST = /Session (?:with given id )?not found|Target closed|No session/i;
-const BROWSER_LEVEL = (method) => method.startsWith("Target.") || method.startsWith("Browser.");
+const SESSION_LOST =
+  /Session (?:with given id )?not found|Target closed|No session/i;
+const BROWSER_LEVEL = (method) =>
+  method.startsWith("Target.") || method.startsWith("Browser.");
 let nextMessageId = 1;
 const pending = new Map();
 const events = [];
 const pageEnabledSessions = new Set();
 const pendingDialogs = new Map();
 export function isBrowserRuntime() {
-  return Boolean(globalThis.ego && typeof globalThis.ego.sendCDPMessage === "function");
+  return Boolean(
+    globalThis.ego && typeof globalThis.ego.sendCDPMessage === "function",
+  );
 }
 
 export function browserEgo() {
@@ -23,11 +27,21 @@ export function browserEgo() {
   return globalThis.ego;
 }
 
-function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RESPONSE_TIMEOUT_MS) {
+function rawCdp(
+  method,
+  params: any = {},
+  sessionId = undefined,
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+) {
   const runtime = browserEgo();
   runtime.onCDPMessage = handleMessage;
   const id = nextMessageId++;
-  const payload = JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) });
+  const payload = JSON.stringify({
+    id,
+    method,
+    params,
+    ...(sessionId ? { sessionId } : {}),
+  });
   return new Promise<any>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
@@ -41,7 +55,7 @@ function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RES
       reject: (error) => {
         clearTimeout(timer);
         reject(error);
-      }
+      },
     });
     try {
       runtime.sendCDPMessage(payload);
@@ -53,7 +67,12 @@ function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RES
   });
 }
 
-export async function browserCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RESPONSE_TIMEOUT_MS) {
+export async function browserCdp(
+  method,
+  params: any = {},
+  sessionId = undefined,
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+) {
   // Test mock: cdpOverride bypasses everything including session injection.
   if (state.cdpOverride) {
     return state.cdpOverride(method, params, sessionId);
@@ -93,13 +112,18 @@ export async function ensureSession() {
       const preferred = state.preferredTargetId
         ? tabs.find((t) => t.targetId === state.preferredTargetId)
         : null;
-      const active = preferred || tabs.find((t) => t.active) || tabs[tabs.length - 1];
+      const active =
+        preferred || tabs.find((t) => t.active) || tabs[tabs.length - 1];
       if (!active) {
         throw new Error("no active tab to attach session");
       }
       const targetId = active.targetId;
       if (targetId !== state.sessionTargetId || !state.sessionId) {
-        const attached = await rawCdp("Target.attachToTarget", { targetId, flatten: true }, undefined);
+        const attached = await rawCdp(
+          "Target.attachToTarget",
+          { targetId, flatten: true },
+          undefined,
+        );
         state.sessionId = attached.result?.sessionId || attached.sessionId;
         state.sessionTargetId = targetId;
       }
@@ -176,7 +200,10 @@ function handleMessage(message) {
     entry.resolve(data);
     return;
   }
-  if (data.method === "Target.detachedFromTarget" || data.method === "Target.targetDestroyed") {
+  if (
+    data.method === "Target.detachedFromTarget" ||
+    data.method === "Target.targetDestroyed"
+  ) {
     const sessionId = data.params?.sessionId || data.sessionId;
     if (sessionId) {
       pageEnabledSessions.delete(sessionId);
@@ -213,6 +240,12 @@ export function browserSnapshotRefsToRefMap(refMap, refs = []) {
     if (ref.backendNodeId === undefined || ref.backendNodeId === null) {
       continue;
     }
-    refMap.add(String(ref.backendNodeId), ref.backendNodeId, ref.role, ref.name, undefined);
+    refMap.add(
+      String(ref.backendNodeId),
+      ref.backendNodeId,
+      ref.role,
+      ref.name,
+      undefined,
+    );
   }
 }

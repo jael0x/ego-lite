@@ -9,9 +9,15 @@ export const NAME = process.env.EGO_BROWSER_NAME || "default";
 
 async function defaultSend(req) {
   if (!req || typeof req !== "object" || !req.method) {
-    throw new Error(`unsupported browser runtime request: ${JSON.stringify(req)}`);
+    throw new Error(
+      `unsupported browser runtime request: ${JSON.stringify(req)}`,
+    );
   }
-  const response = await browserCdp(req.method, req.params || {}, req.session_id);
+  const response = await browserCdp(
+    req.method,
+    req.params || {},
+    req.session_id,
+  );
   return { result: response.result || {} };
 }
 
@@ -29,7 +35,7 @@ export const state = {
   sessionInflight: null,
   preferredTargetId: null,
   // Last observed Network domain state on the default session (tracked in cdp()).
-  networkDomainEnabled: false
+  networkDomainEnabled: false,
 };
 
 export async function send(req) {

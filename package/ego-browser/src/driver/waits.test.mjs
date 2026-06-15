@@ -18,7 +18,7 @@ test("waitForNetworkIdle enables the Network domain and disables it afterwards",
     now: () => t,
     sleep: async (ms) => {
       t += ms;
-    }
+    },
   });
   try {
     const result = await waitForNetworkIdle({ timeout: 5 });
@@ -26,8 +26,16 @@ test("waitForNetworkIdle enables the Network domain and disables it afterwards",
   } finally {
     restore();
   }
-  assert.equal(methods[0], "Network.enable", "must enable Network before observing");
-  assert.equal(methods.at(-1), "Network.disable", "must disable Network when done");
+  assert.equal(
+    methods[0],
+    "Network.enable",
+    "must enable Network before observing",
+  );
+  assert.equal(
+    methods.at(-1),
+    "Network.disable",
+    "must disable Network when done",
+  );
 });
 
 test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async () => {
@@ -41,7 +49,7 @@ test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async 
     now: () => t,
     sleep: async (ms) => {
       t += ms;
-    }
+    },
   });
   try {
     await cdp("Network.enable"); // the caller owns the domain
@@ -53,7 +61,7 @@ test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async 
   }
   assert.ok(
     !methods.includes("Network.disable"),
-    "must not tear down a Network domain the caller enabled"
+    "must not tear down a Network domain the caller enabled",
   );
 });
 
@@ -69,7 +77,7 @@ test("waitForNetworkIdle survives a bridge that rejects Network.enable", async (
     now: () => t,
     sleep: async (ms) => {
       t += ms;
-    }
+    },
   });
   try {
     const result = await waitForNetworkIdle({ timeout: 5 });

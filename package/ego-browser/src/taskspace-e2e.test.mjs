@@ -8,7 +8,13 @@ class FakeEgo {
     this.taskSpaces = taskSpaces.map((space) => ({ ...space }));
     this.calls = [];
     this.selectedId = null;
-    this.nextId = Math.max(0, ...this.taskSpaces.map((space) => typeof space.id === "number" ? space.id : 0)) + 1;
+    this.nextId =
+      Math.max(
+        0,
+        ...this.taskSpaces.map((space) =>
+          typeof space.id === "number" ? space.id : 0,
+        ),
+      ) + 1;
   }
 
   async listTaskSpaces() {
@@ -27,10 +33,21 @@ class FakeEgo {
 
   async createTaskSpace(name) {
     this.calls.push(["createTaskSpace", name]);
-    if (this.taskSpaces.some((space) => space.taskId === name || space.name === name)) {
+    if (
+      this.taskSpaces.some(
+        (space) => space.taskId === name || space.name === name,
+      )
+    ) {
       return { error: `Task space already exists: ${name}` };
     }
-    const created = { taskId: name, id: this.nextId++, name, createdBy: "agent", ownership: "agent", recentTabTitles: [] };
+    const created = {
+      taskId: name,
+      id: this.nextId++,
+      name,
+      createdBy: "agent",
+      ownership: "agent",
+      recentTabTitles: [],
+    };
     this.taskSpaces.push(created);
     return { ...created };
   }
@@ -65,7 +82,7 @@ async function runTaskspaceScript(ego, code) {
       stdinText: code,
       stdout,
       stderr,
-      services: { printUpdateBanner() {} }
+      services: { printUpdateBanner() {} },
     });
     return { exitCode, stdout: stdout.text(), stderr: stderr.text() };
   } finally {
@@ -85,7 +102,7 @@ function captureStream() {
     },
     text() {
       return chunks.join("");
-    }
+    },
   };
 }
 
@@ -95,10 +112,13 @@ function firstJsonLine(output) {
 
 test("taskspace e2e creates and selects a missing task space", async () => {
   const ego = new FakeEgo();
-  const result = await runTaskspaceScript(ego, `
+  const result = await runTaskspaceScript(
+    ego,
+    `
     const task = await useOrCreateTaskSpace("checkout-flow");
     cliLog(JSON.stringify({ task, selected: ego.selectedId }));
-  `);
+  `,
+  );
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
@@ -108,81 +128,113 @@ test("taskspace e2e creates and selects a missing task space", async () => {
       name: "checkout-flow",
       createdBy: "agent",
       ownership: "agent",
-      recentTabTitles: []
+      recentTabTitles: [],
     },
-    selected: 1
+    selected: 1,
   });
   assert.deepEqual(ego.calls, [
     ["listTaskSpaces"],
     ["createTaskSpace", "checkout-flow"],
-    ["useTaskSpace", 1]
+    ["useTaskSpace", 1],
   ]);
 });
 
 test("taskspace e2e reuses an existing agent-owned task space", async () => {
   const ego = new FakeEgo([
-    { taskId: "checkout-flow", id: 7, name: "Checkout flow", createdBy: "agent", ownership: "agent" }
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "Checkout flow",
+      createdBy: "agent",
+      ownership: "agent",
+    },
   ]);
-  const result = await runTaskspaceScript(ego, `
+  const result = await runTaskspaceScript(
+    ego,
+    `
     const task = await useOrCreateTaskSpace(7);
     cliLog(JSON.stringify({ task, selected: ego.selectedId }));
-  `);
+  `,
+  );
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
-    task: { taskId: "checkout-flow", id: 7, name: "Checkout flow", createdBy: "agent", ownership: "agent" },
-    selected: 7
+    task: {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "Checkout flow",
+      createdBy: "agent",
+      ownership: "agent",
+    },
+    selected: 7,
   });
-  assert.deepEqual(ego.calls, [
-    ["listTaskSpaces"],
-    ["useTaskSpace", 7]
-  ]);
+  assert.deepEqual(ego.calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
 });
 
 test("taskspace e2e claims and selects an existing user-owned task space", async () => {
   const ego = new FakeEgo([
-    { taskId: "checkout-flow", id: 7, name: "checkout-flow", createdBy: "user", ownership: "user" }
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      createdBy: "user",
+      ownership: "user",
+    },
   ]);
-  const result = await runTaskspaceScript(ego, `
+  const result = await runTaskspaceScript(
+    ego,
+    `
     const task = await useOrCreateTaskSpace("checkout-flow");
     cliLog(JSON.stringify({ task, selected: ego.selectedId }));
-  `);
+  `,
+  );
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
-    task: { taskId: "checkout-flow", id: 7, name: "checkout-flow", createdBy: "agent", ownership: "agent" },
-    selected: 7
+    task: {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      createdBy: "agent",
+      ownership: "agent",
+    },
+    selected: 7,
   });
   assert.deepEqual(ego.calls, [
     ["listTaskSpaces"],
     ["claimTaskSpace", 7, "checkout-flow"],
-    ["useTaskSpace", 7]
+    ["useTaskSpace", 7],
   ]);
 });
 
 test("taskspace e2e exposes newTaskSpace but not claimTaskSpace as a helper", async () => {
   const ego = new FakeEgo();
-  const result = await runTaskspaceScript(ego, `
+  const result = await runTaskspaceScript(
+    ego,
+    `
     cliLog(JSON.stringify({
       newType: typeof newTaskSpace,
       switchType: typeof switchTaskSpace,
       claimType: typeof claimTaskSpace,
       rawClaimType: typeof ego.claimTaskSpace
     }));
-  `);
+  `,
+  );
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
     newType: "function",
     switchType: "function",
     claimType: "undefined",
-    rawClaimType: "function"
+    rawClaimType: "function",
   });
 });
 
 test("cli e2e exposes the unified helperContext surface (help present, internals hidden)", async () => {
   const ego = new FakeEgo();
-  const result = await runTaskspaceScript(ego, `
+  const result = await runTaskspaceScript(
+    ego,
+    `
     cliLog(JSON.stringify({
       helpType: typeof help,
       helpResultType: typeof help("click"),
@@ -190,7 +242,8 @@ test("cli e2e exposes the unified helperContext surface (help present, internals
       helperContextType: typeof helperContext,
       loadAgentHelpersType: typeof loadAgentHelpers
     }));
-  `);
+  `,
+  );
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
@@ -198,42 +251,59 @@ test("cli e2e exposes the unified helperContext surface (help present, internals
     helpResultType: "string",
     newTabType: "undefined",
     helperContextType: "undefined",
-    loadAgentHelpersType: "undefined"
+    loadAgentHelpersType: "undefined",
   });
 });
 
 test("taskspace e2e rejects explicit use of a user-owned task space", async () => {
   const ego = new FakeEgo([
-    { taskId: "checkout-flow", id: 7, name: "checkout-flow", createdBy: "user", ownership: "user" }
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      createdBy: "user",
+      ownership: "user",
+    },
   ]);
 
   await assert.rejects(
     () => runTaskspaceScript(ego, `await switchTaskSpace("checkout-flow")`),
-    /switchTaskSpace requires an agent-owned task space/
+    /switchTaskSpace requires an agent-owned task space/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"]]);
 });
 
 test("taskspace e2e rejects unknown task space ownership", async () => {
   const ego = new FakeEgo([
-    { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "shared" }
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      ownership: "shared",
+    },
   ]);
 
   await assert.rejects(
-    () => runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
-    /ownership "shared"/
+    () =>
+      runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
+    /ownership "shared"/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"]]);
 });
 
 test("taskspace e2e surfaces newTaskSpace binding errors", async () => {
   const ego = new FakeEgo([
-    { taskId: "checkout-flow", id: 7, name: "checkout-flow", ownership: "agent" }
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      ownership: "agent",
+    },
   ]);
 
   await assert.rejects(
     () => runTaskspaceScript(ego, `await newTaskSpace("checkout-flow")`),
-    /newTaskSpace: Task space already exists: checkout-flow/
+    /newTaskSpace: Task space already exists: checkout-flow/,
   );
   assert.deepEqual(ego.calls, [["createTaskSpace", "checkout-flow"]]);
 });

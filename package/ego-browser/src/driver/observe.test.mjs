@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { browserCdp, invalidateSession } from "../../dist/src/browser-runtime.js";
+import {
+  browserCdp,
+  invalidateSession,
+} from "../../dist/src/browser-runtime.js";
 import { captureScreenshot } from "../../dist/src/driver/observe.js";
 import { setOverrides } from "../../dist/src/state.js";
 
@@ -12,8 +15,13 @@ function withCdpRuntime(fn) {
     async listTabs() {
       return {
         tabs: [
-          { targetId: "target-1", active: true, title: "Example", url: "https://example.com/" }
-        ]
+          {
+            targetId: "target-1",
+            active: true,
+            title: "Example",
+            url: "https://example.com/",
+          },
+        ],
       };
     },
     sendCDPMessage(payload) {
@@ -27,11 +35,15 @@ function withCdpRuntime(fn) {
       } else if (request.method === "Runtime.evaluate") {
         result = { result: { value: "1" } };
       }
-      queueMicrotask(() => runtime.onCDPMessage(JSON.stringify({ id: request.id, result })));
+      queueMicrotask(() =>
+        runtime.onCDPMessage(JSON.stringify({ id: request.id, result })),
+      );
     },
     emit(method, params) {
-      runtime.onCDPMessage(JSON.stringify({ sessionId: "session-1", method, params }));
-    }
+      runtime.onCDPMessage(
+        JSON.stringify({ sessionId: "session-1", method, params }),
+      );
+    },
   };
   globalThis.ego = runtime;
   invalidateSession();
@@ -52,7 +64,7 @@ test("captureScreenshot skips page metric JavaScript while a native dialog is pe
   const restore = setOverrides({
     async writeFile(path, data) {
       writes.push({ path, data });
-    }
+    },
   });
   try {
     await withCdpRuntime(async ({ runtime, sent }) => {
@@ -60,17 +72,22 @@ test("captureScreenshot skips page metric JavaScript while a native dialog is pe
       runtime.emit("Page.javascriptDialogOpening", {
         type: "alert",
         message: "Blocked",
-        url: "https://example.com/"
+        url: "https://example.com/",
       });
       sent.length = 0;
 
       await captureScreenshot("/tmp/ego-browser-dialog-shot.png");
 
-      assert.equal(sent.some((request) => request.method === "Runtime.evaluate"), false);
-      const screenshot = sent.find((request) => request.method === "Page.captureScreenshot");
+      assert.equal(
+        sent.some((request) => request.method === "Runtime.evaluate"),
+        false,
+      );
+      const screenshot = sent.find(
+        (request) => request.method === "Page.captureScreenshot",
+      );
       assert.deepEqual(screenshot.params, {
         format: "png",
-        captureBeyondViewport: false
+        captureBeyondViewport: false,
       });
     });
   } finally {

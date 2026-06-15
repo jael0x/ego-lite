@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveElementCenter, ElementResolutionError } from "../dist/src/element-resolver.js";
+import {
+  resolveElementCenter,
+  ElementResolutionError,
+} from "../dist/src/element-resolver.js";
 import { RefMap } from "../dist/src/ref-map.js";
 
 class FakeCDP {
@@ -18,8 +21,8 @@ class FakeCDP {
 
 const AX_TREE = {
   nodes: [
-    { role: { value: "button" }, name: { value: "ok" }, backendDOMNodeId: 100 }
-  ]
+    { role: { value: "button" }, name: { value: "ok" }, backendDOMNodeId: 100 },
+  ],
 };
 
 test("resolveElementCenter computes the center from a valid box model", async () => {
@@ -57,11 +60,11 @@ test("degenerate box model throws transient instead of returning (0,0)", async (
       assert.equal(error.kind, "transient");
       assert.match(error.message, /no box model/);
       return true;
-    }
+    },
   );
   assert.ok(
     !cdp.calls.some(([method]) => method === "Accessibility.getFullAXTree"),
-    "must not fall back to role/name lookup — it could match a different node with the same label"
+    "must not fall back to role/name lookup — it could match a different node with the same label",
   );
 });
 
@@ -87,7 +90,7 @@ test("stale backend node still falls back to role/name lookup", async () => {
   assert.equal(point.y, 5);
   assert.ok(
     cdp.calls.some(([method]) => method === "Accessibility.getFullAXTree"),
-    "a stale node must trigger the role/name fallback"
+    "a stale node must trigger the role/name fallback",
   );
 });
 
@@ -102,11 +105,17 @@ test("role locator with degenerate box model throws transient", async () => {
     return {};
   });
   await assert.rejects(
-    () => resolveElementCenter(cdp, undefined, new RefMap(), 'loc=role:button[name="ok"]'),
+    () =>
+      resolveElementCenter(
+        cdp,
+        undefined,
+        new RefMap(),
+        'loc=role:button[name="ok"]',
+      ),
     (error) => {
       assert.ok(error instanceof ElementResolutionError);
       assert.equal(error.kind, "transient");
       return true;
-    }
+    },
   );
 });

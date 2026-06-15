@@ -1,4 +1,8 @@
-import { stdin as processStdin, stdout as processStdout, stderr as processStderr } from "node:process";
+import {
+  stdin as processStdin,
+  stdout as processStdout,
+  stderr as processStderr,
+} from "node:process";
 
 import { formatCliLogValue } from "./format.js";
 import * as helpers from "./helpers.js";
@@ -62,7 +66,7 @@ export async function runMain(options: RunMainOptions = {}) {
     resetConnection: async () => {},
     printUpdateBanner: () => {},
     runDoctor: async () => 0,
-    ...options.services
+    ...options.services,
   };
 
   if (argv[0] === "-h" || argv[0] === "--help") {
@@ -86,7 +90,10 @@ export async function runMain(options: RunMainOptions = {}) {
     return 2;
   }
 
-  const code = options.stdinText !== undefined ? options.stdinText : await readAll(options.stdin || processStdin);
+  const code =
+    options.stdinText !== undefined
+      ? options.stdinText
+      : await readAll(options.stdin || processStdin);
   if (!code.trim()) {
     write(stderr, USAGE);
     return 2;
