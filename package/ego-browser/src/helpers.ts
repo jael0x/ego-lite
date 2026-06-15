@@ -56,8 +56,12 @@ export async function listTaskSpaces() {
 }
 
 /*
- * Task space ownership policy (`ownership`: "agent" | "user").
- * What each helper does when the target space is user-owned:
+ * Task space ownership policy (`ownership`: "agent" | "agentDelegatedToUser" | "user").
+ * "agent" and "agentDelegatedToUser" are both agent-owned (see isAgentOwned) — the
+ * latter is the agent's own space with control temporarily handed to the user
+ * (handoff or GUI takeover). The user-control boundary is enforced at the native
+ * bridge when real commands run, not here. The rows below describe what each helper
+ * does when the target space is user-owned:
  *
  *   switchTaskSpace                     -> throws (agent-owned only)
  *   useOrCreateTaskSpace                -> claims it (ownership transfers to the agent)
@@ -70,6 +74,18 @@ export async function listTaskSpaces() {
  */
 
 /**
+ * Whether the agent owns the space. "agentDelegatedToUser" is still agent-owned —
+ * the agent created it but control is temporarily with the user (handoff / GUI
+ * takeover). Selecting such a space is fine; the user-control boundary is enforced
+ * separately at the native bridge when real commands run.
+ * @param {string|undefined} ownership
+ * @returns {boolean}
+ */
+function isAgentOwned(ownership) {
+  return ownership === "agent" || ownership === "agentDelegatedToUser";
+}
+
+/**
  * Select an existing task space by id/name for the current Node invocation.
  * @param {string|number} nameOrId Task space id or name.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
@@ -80,7 +96,7 @@ export async function switchTaskSpace(nameOrId) {
     throw new Error("switchTaskSpace requires ego.useTaskSpace");
   }
   const space = await findTaskSpace(nameOrId);
-  if (space.ownership !== "agent") {
+  if (!isAgentOwned(space.ownership)) {
     throw new Error(`switchTaskSpace requires an agent-owned task space, got ownership ${JSON.stringify(space.ownership)}`);
   }
   return selectTaskSpace(ego, space, "switchTaskSpace");
@@ -118,7 +134,7 @@ export async function useOrCreateTaskSpace(nameOrId) {
     }
     return newTaskSpace(nameOrId);
   }
-  if (existing.ownership === "agent") {
+  if (isAgentOwned(existing.ownership)) {
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   if (existing.ownership === "user") {

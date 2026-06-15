@@ -65,7 +65,7 @@ Use a short name for the current user goal when creating a new task space. Reuse
 
 To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await useOrCreateTaskSpace(id)` to claim it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
 
-**Ownership policy** — every task space has `ownership: 'agent' | 'user'`; the helpers treat user-owned spaces differently:
+**Ownership policy** — every task space has `ownership: 'agent' | 'agentDelegatedToUser' | 'user'`; the helpers treat user-owned spaces differently:
 
 | Helper | When the target space is user-owned |
 |---|---|
