@@ -1,13 +1,16 @@
 import { cdp } from "../cdp-eval.js";
 import { withHandle, resolveAndCall } from "./element-ops.js";
 import { waitForElement } from "./waits.js";
+import { CDP } from "../constants.js";
 
 type FillInputOptions = {
   clearFirst?: boolean;
   timeout?: number;
 };
 
-const KEYS = {
+type KeyDef = { vk: number; key: string; code: string; text: string };
+
+const KEYS: Record<string, KeyDef> = {
   Enter: { vk: 13, key: "Enter", code: "Enter", text: "\r" },
   Tab: { vk: 9, key: "Tab", code: "Tab", text: "\t" },
   Backspace: { vk: 8, key: "Backspace", code: "Backspace", text: "" },
@@ -21,14 +24,14 @@ const KEYS = {
   Home: { vk: 36, key: "Home", code: "Home", text: "" },
   End: { vk: 35, key: "End", code: "End", text: "" },
   PageUp: { vk: 33, key: "PageUp", code: "PageUp", text: "" },
-  PageDown: { vk: 34, key: "PageDown", code: "PageDown", text: "" }
+  PageDown: { vk: 34, key: "PageDown", code: "PageDown", text: "" },
 };
 
 const PRINTABLE_CODE_RE = /^[A-Za-z0-9]$/;
 const CTRL_MODIFIER = 2;
 const META_MODIFIER = 4;
 
-function keyDefinition(key) {
+function keyDefinition(key: string): KeyDef {
   const special = KEYS[key];
   if (special) {
     return special;
@@ -36,13 +39,18 @@ function keyDefinition(key) {
   if (key.length !== 1) {
     return { vk: 0, key, code: key, text: "" };
   }
-  const vk = key.toUpperCase().codePointAt(0);
-  const code = PRINTABLE_CODE_RE.test(key) ? `${/[0-9]/.test(key) ? "Digit" : "Key"}${key.toUpperCase()}` : key;
+  const vk = key.toUpperCase().codePointAt(0) ?? 0;
+  const code = PRINTABLE_CODE_RE.test(key)
+    ? `${/[0-9]/.test(key) ? "Digit" : "Key"}${key.toUpperCase()}`
+    : key;
   return { vk, key, code, text: key };
 }
 
-function editingCommandsForKey(key, modifiers) {
-  if ((modifiers === CTRL_MODIFIER || modifiers === META_MODIFIER) && key.toLowerCase() === "a") {
+function editingCommandsForKey(key: string, modifiers: number) {
+  if (
+    (modifiers === CTRL_MODIFIER || modifiers === META_MODIFIER) &&
+    key.toLowerCase() === "a"
+  ) {
     return ["selectAll"];
   }
   return undefined;
@@ -54,17 +62,23 @@ function editingCommandsForKey(key, modifiers) {
  * @param {number} [modifiers=0] CDP modifier bitfield: Alt=1, Ctrl=2, Meta/Cmd=4, Shift=8.
  * @returns {Promise<void>}
  */
-export async function pressKey(key, modifiers = 0) {
+export async function pressKey(key: string, modifiers = 0) {
   const { vk, code, text } = keyDefinition(key);
-  const base = { key, code, modifiers, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+  const base = {
+    key,
+    code,
+    modifiers,
+    windowsVirtualKeyCode: vk,
+    nativeVirtualKeyCode: vk,
+  };
   const commands = editingCommandsForKey(key, modifiers);
-  await cdp("Input.dispatchKeyEvent", {
+  await cdp(CDP.inputDispatchKeyEvent, {
     type: "keyDown",
     ...base,
     ...(text ? { text, unmodifiedText: text } : {}),
-    ...(commands ? { commands } : {})
+    ...(commands ? { commands } : {}),
   });
-  await cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+  await cdp(CDP.inputDispatchKeyEvent, { type: "keyUp", ...base });
 }
 
 /**
@@ -72,8 +86,8 @@ export async function pressKey(key, modifiers = 0) {
  * @param {string} text Text to insert.
  * @returns {Promise<void>}
  */
-export async function typeText(text) {
-  await cdp("Input.insertText", { text });
+export async function typeText(text: string) {
+  await cdp(CDP.inputInsertText, { text });
 }
 
 /**
@@ -83,34 +97,55 @@ export async function typeText(text) {
  * @param {{clearFirst?: boolean, timeout?: number}} [options]
  * @returns {Promise<void>}
  */
-export async function fillInput(selector, text, options: FillInputOptions = {}) {
+export async function fillInput(
+  selector: string,
+  text: string,
+  options: FillInputOptions = {},
+) {
   const clearFirst = options.clearFirst ?? true;
   const timeout = options.timeout ?? 0;
-  if (timeout > 0 && !await waitForElement(selector, { timeout })) {
-    throw new Error(`fillInput: element not found: ${JSON.stringify(selector)}`);
+  if (timeout > 0 && !(await waitForElement(selector, { timeout }))) {
+    throw new Error(
+      `fillInput: element not found: ${JSON.stringify(selector)}`,
+    );
   }
   await withHandle(selector, async ({ objectId, sessionId }) => {
-    await cdp("Runtime.callFunctionOn", {
-      functionDeclaration: "function(){this.focus(); if(typeof this.select==='function') this.select();}",
-      objectId,
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
-    if (clearFirst) {
-      await cdp("Runtime.callFunctionOn", {
-        functionDeclaration: "function(){this.value=''; this.dispatchEvent(new Event('input',{bubbles:true}));}",
+    await cdp(
+      CDP.runtimeCallFunctionOn,
+      {
+        functionDeclaration:
+          "function(){this.focus(); if(typeof this.select==='function') this.select();}",
         objectId,
         returnByValue: true,
-        awaitPromise: false
-      }, sessionId);
+        awaitPromise: false,
+      },
+      sessionId,
+    );
+    if (clearFirst) {
+      await cdp(
+        CDP.runtimeCallFunctionOn,
+        {
+          functionDeclaration:
+            "function(){this.value=''; this.dispatchEvent(new Event('input',{bubbles:true}));}",
+          objectId,
+          returnByValue: true,
+          awaitPromise: false,
+        },
+        sessionId,
+      );
     }
-    await cdp("Input.insertText", { text }, sessionId);
-    await cdp("Runtime.callFunctionOn", {
-      functionDeclaration: "function(){this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true}));}",
-      objectId,
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
+    await cdp(CDP.inputInsertText, { text }, sessionId);
+    await cdp(
+      CDP.runtimeCallFunctionOn,
+      {
+        functionDeclaration:
+          "function(){this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true}));}",
+        objectId,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      sessionId,
+    );
   });
 }
 
@@ -122,11 +157,15 @@ export async function fillInput(selector, text, options: FillInputOptions = {}) 
  * @param {"keydown"|"keypress"|"keyup"|string} [event="keypress"] Event type.
  * @returns {Promise<void>}
  */
-export async function dispatchKey(selector, key = "Enter", event = "keypress") {
+export async function dispatchKey(
+  selector: string,
+  key = "Enter",
+  event = "keypress",
+) {
   const { vk, code } = keyDefinition(key);
   await resolveAndCall(
     selector,
     "function(keyCode, key, code, event){this.focus(); this.dispatchEvent(new KeyboardEvent(event,{key,code,keyCode,which:keyCode,bubbles:true}));}",
-    [vk, key, code, event]
+    [vk, key, code, event],
   );
 }
