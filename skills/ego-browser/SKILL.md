@@ -16,8 +16,9 @@ Use the `Bash` tool to run all browser operations via `ego-browser nodejs <<'EOF
 
 ```bash
 ego-browser nodejs <<'EOF'
-const taskSpaceName = 'current user goal'
-const task = await useOrCreateTaskSpace(taskSpaceName)
+// Name the task space for the whole user task, then reuse that space across heredoc rounds.
+const task = await useOrCreateTaskSpace('inspect example page')
+cliLog('task space id: ' + task.id)
 
 await openOrReuseTab('https://example.com', { wait: true, timeout: 20 })
 
@@ -25,7 +26,7 @@ cliLog(await snapshotText())
 EOF
 ```
 
-The heredoc body runs in a Node.js process with direct access to all ego-browser helpers.
+The heredoc body runs as a Node.js script that controls the selected ego-browser task space. All ego-browser helpers are preloaded into that script.
 
 ## Common helpers
 
