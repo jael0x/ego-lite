@@ -1,6 +1,10 @@
 import { cdp } from "../cdp-eval.js";
 import { browserRefMap, ensureRefMapForRef } from "../ref-state.js";
 import { resolveElementObjectId } from "../element-resolver.js";
+import { CDP } from "../constants.js";
+import type { CdpResult } from "../types.js";
+
+type ElementHandle = { objectId: string; sessionId?: string };
 
 /**
  * Resolve any selector form to a CDP Runtime objectId handle.
@@ -10,9 +14,16 @@ import { resolveElementObjectId } from "../element-resolver.js";
  * @param {string} selectorOrRef Selector or ref string.
  * @returns {Promise<{objectId: string, sessionId?: string}>}
  */
-export async function resolveHandle(selectorOrRef) {
+export async function resolveHandle(
+  selectorOrRef: string,
+): Promise<ElementHandle> {
   await ensureRefMapForRef(selectorOrRef);
-  return resolveElementObjectId({ sendRaw: cdp }, undefined, browserRefMap, selectorOrRef);
+  return resolveElementObjectId(
+    { sendRaw: cdp },
+    undefined,
+    browserRefMap,
+    selectorOrRef,
+  );
 }
 
 /**
@@ -22,10 +33,10 @@ export async function resolveHandle(selectorOrRef) {
  * @param {string} [sessionId] Session that owns the handle.
  * @returns {Promise<void>}
  */
-export async function releaseHandle(objectId, sessionId) {
+export async function releaseHandle(objectId: string, sessionId?: string) {
   if (!objectId) return;
   try {
-    await cdp("Runtime.releaseObject", { objectId }, sessionId);
+    await cdp(CDP.runtimeReleaseObject, { objectId }, sessionId);
   } catch {
     // Handle/session already invalid; releasing is best-effort.
   }
@@ -37,7 +48,10 @@ export async function releaseHandle(objectId, sessionId) {
  * @param {(handle: {objectId: string, sessionId?: string}) => Promise<any>} fn Callback bound to the resolved handle.
  * @returns {Promise<any>} Whatever fn returns.
  */
-export async function withHandle(selectorOrRef, fn) {
+export async function withHandle<T>(
+  selectorOrRef: string,
+  fn: (handle: ElementHandle) => Promise<T>,
+): Promise<T> {
   const handle = await resolveHandle(selectorOrRef);
   try {
     return await fn(handle);
@@ -55,15 +69,23 @@ export async function withHandle(selectorOrRef, fn) {
  * @param {Array<unknown>} [args=[]] Arguments passed by value.
  * @returns {Promise<{result: any, objectId: string, sessionId?: string}>}
  */
-export async function resolveAndCall(selectorOrRef, functionDeclaration, args = []) {
+export async function resolveAndCall(
+  selectorOrRef: string,
+  functionDeclaration: string,
+  args: unknown[] = [],
+): Promise<{ result: CdpResult; objectId: string; sessionId?: string }> {
   return withHandle(selectorOrRef, async ({ objectId, sessionId }) => {
-    const result = await cdp("Runtime.callFunctionOn", {
-      functionDeclaration,
-      objectId,
-      arguments: args.map((value) => ({ value })),
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
+    const result = await cdp(
+      CDP.runtimeCallFunctionOn,
+      {
+        functionDeclaration,
+        objectId,
+        arguments: args.map((value) => ({ value })),
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      sessionId,
+    );
     return { result, objectId, sessionId };
   });
 }
