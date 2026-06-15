@@ -78,3 +78,5 @@ browser/
 task/
 test-e2e/
 test/
+# Translated skill (local only)
+skills/ego-browser/SKILL.zh.md

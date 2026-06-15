@@ -10,11 +10,11 @@ ego-browser (Chromium) → globalThis.ego → helper functions → agent heredoc
 
 ```bash
 npm ci
-npm run build     # bundle to artifacts/ego-browser/index.js
+npm run build     # bundle to dist/out/index.js
 npm test          # build + tsc --noEmit + node --test
 ```
 
-The build emits a single ESM file `artifacts/ego-browser/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshotText`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
+The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshotText`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
 
 ```bash
 ego-browser nodejs <<'EOF'
@@ -27,7 +27,7 @@ EOF
 Local invocation without the browser (for debugging the helper bundle itself) reads stdin:
 
 ```bash
-node artifacts/ego-browser/index.js <<'JS'
+node dist/out/index.js <<'JS'
 cliLog(await pageInfo())
 JS
 ```
@@ -66,9 +66,9 @@ src/
   element-resolver.ts    resolves @eN / CSS / XPath / ARIA targets
   driver/
     pointer.ts           click, hover, drag, scroll, scrollBy
-    observe.ts           snapshot, captureScreenshot, elementEval
+    observe.ts           snapshot, captureScreenshot, elementCenter
     keyboard.ts          typeText, pressKey, fillInput, dispatchKey
-    nav.ts               tabs, gotoUrl, openOrReuseTab
+    nav.ts               tabs, gotoUrl, openOrReuseTab, closeTab
     load.ts              waitForLoad and load orchestration
     waits.ts             waitForElement, waitForNetworkIdle, wait
     files.ts             uploadFile

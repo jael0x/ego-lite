@@ -69,20 +69,28 @@ export function learningsRoot(workspace = agentWorkspace()) {
 
 export const siteSkillsRoot = learningsRoot;
 
-export async function checkDomainLearningExists(urlOrDomain: string, options: { root?: string; agentWorkspace?: string } = {}) {
+export async function checkDomainLearningExists(
+  urlOrDomain: string,
+  options: { root?: string; agentWorkspace?: string } = {},
+) {
   const hostname = urlHostname(urlOrDomain);
-  const root = options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
+  const root =
+    options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
   const matches = hostname ? await siteSkillsForUrl(hostname, { root }) : [];
   return {
     exists: matches.length > 0,
     hostname,
     root,
-    matches
+    matches,
   };
 }
 
-export async function checkLearningExists(siteId: string, options: { root?: string; agentWorkspace?: string } = {}) {
-  const root = options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
+export async function checkLearningExists(
+  siteId: string,
+  options: { root?: string; agentWorkspace?: string } = {},
+) {
+  const root =
+    options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
   const siteDir = join(root, siteId);
   const manifestPath = join(siteDir, "manifest.json");
   const exists = await pathExists(manifestPath);
@@ -90,7 +98,7 @@ export async function checkLearningExists(siteId: string, options: { root?: stri
     exists,
     root,
     siteDir,
-    manifestPath
+    manifestPath,
   };
 }
 
@@ -99,7 +107,8 @@ export async function siteSkillsForUrl(url, options: any = {}) {
   if (!hostname) {
     return [];
   }
-  const root = options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
+  const root =
+    options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
   const matches = [];
   for (const siteDir of await iterLearningDirs(root)) {
     let manifest;
@@ -109,7 +118,12 @@ export async function siteSkillsForUrl(url, options: any = {}) {
       continue;
     }
     const domains = Array.isArray(manifest.domains) ? manifest.domains : [];
-    if (domains.some((domain) => typeof domain === "string" && domainMatches(hostname, domain))) {
+    if (
+      domains.some(
+        (domain) =>
+          typeof domain === "string" && domainMatches(hostname, domain),
+      )
+    ) {
       matches.push(learningEntry(siteDir, manifest));
     }
   }
@@ -129,20 +143,29 @@ export async function iterLearningDirs(root: string) {
     .sort();
 }
 
-export async function loadLearningManifest(siteDir: string): Promise<LearningManifest> {
+export async function loadLearningManifest(
+  siteDir: string,
+): Promise<LearningManifest> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(join(siteDir, "manifest.json"), "utf8"));
   } catch (error) {
-    throw new Error(`site skill ${JSON.stringify(siteDir)} has invalid or missing manifest.json: ${error.message}`);
+    throw new Error(
+      `site skill ${JSON.stringify(siteDir)} has invalid or missing manifest.json: ${error.message}`,
+    );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`site skill ${JSON.stringify(siteDir)} manifest must be an object`);
+    throw new Error(
+      `site skill ${JSON.stringify(siteDir)} manifest must be an object`,
+    );
   }
   return parsed as LearningManifest;
 }
 
-export function learningEntry(siteDir: string, manifest: LearningManifest): LearningEntry {
+export function learningEntry(
+  siteDir: string,
+  manifest: LearningManifest,
+): LearningEntry {
   const notes = Array.isArray(manifest.notes) ? manifest.notes : [];
   return {
     id: manifest.id || siteDir.split(/[\\/]/).at(-1),
@@ -151,7 +174,7 @@ export function learningEntry(siteDir: string, manifest: LearningManifest): Lear
     domains: Array.isArray(manifest.domains) ? [...manifest.domains] : [],
     notes: notes.map((note) => join(siteDir, note)),
     nodeTools: toolSchemasNode(manifest),
-    browserTools: toolSchemasBrowser(manifest)
+    browserTools: toolSchemasBrowser(manifest),
   };
 }
 
@@ -164,7 +187,7 @@ export async function pathExists(path: string) {
   }
 }
 
-function urlHostname(url) {
+export function urlHostname(url) {
   try {
     const parsed = String(url).includes("://")
       ? new URL(String(url))
@@ -176,7 +199,9 @@ function urlHostname(url) {
 }
 
 function domainMatches(hostname, pattern) {
-  const normalized = String(pattern || "").toLowerCase().replace(/\.$/, "");
+  const normalized = String(pattern || "")
+    .toLowerCase()
+    .replace(/\.$/, "");
   if (normalized.startsWith("*.")) {
     const suffix = normalized.slice(2);
     return hostname.endsWith(`.${suffix}`);
@@ -184,13 +209,17 @@ function domainMatches(hostname, pattern) {
   return hostname === normalized;
 }
 
-function toolSchemasNode(manifest: LearningManifest): Record<string, NodeToolSchema> {
+function toolSchemasNode(
+  manifest: LearningManifest,
+): Record<string, NodeToolSchema> {
   const value = manifest.nodeTools;
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return { ...value };
 }
 
-function toolSchemasBrowser(manifest: LearningManifest): Record<string, ToolSchema> {
+function toolSchemasBrowser(
+  manifest: LearningManifest,
+): Record<string, ToolSchema> {
   const value = manifest.browserTools;
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return { ...value };

@@ -9,6 +9,7 @@ import {
   loadLearningManifest,
   siteSkillsForUrl,
   siteSkillsRoot,
+  urlHostname,
   LearningEntry,
   LearningManifest,
   LearnedContext,
@@ -20,7 +21,7 @@ import {
 import {
   validateLearning,
   validateLearnings,
-  validateSiteSkills
+  validateSiteSkills,
 } from "./validate-learning-format.js";
 
 export {
@@ -30,19 +31,22 @@ export {
   learningsRoot,
   pathExists,
   siteSkillsForUrl,
-  siteSkillsRoot
+  siteSkillsRoot,
 } from "./check-domain-learning.js";
 export {
   validateLearning,
   validateLearnings,
-  validateSiteSkills
+  validateSiteSkills,
 } from "./validate-learning-format.js";
 
 /**
  * Load learned context for a given URL.
  * Returns site knowledge (notes content, available tools, selector hints).
  */
-export async function loadLearnedContext(url: string, options: any = {}): Promise<LearnedContext> {
+export async function loadLearnedContext(
+  url: string,
+  options: any = {},
+): Promise<LearnedContext> {
   const matches = await siteSkillsForUrl(url, options);
   if (matches.length === 0) {
     return {
@@ -111,27 +115,21 @@ export async function loadLearnedContext(url: string, options: any = {}): Promis
   };
 }
 
-function urlHostname(url) {
-  try {
-    const parsed = String(url).includes("://")
-      ? new URL(String(url))
-      : new URL(`https://${url}`);
-    return (parsed.hostname || "").toLowerCase().replace(/\.$/, "");
-  } catch {
-    return "";
-  }
-}
-
 function isLearningNotePath(siteDir: string, notePath: string) {
   const relativePath = relative(resolve(siteDir), resolve(notePath));
   const parts = relativePath.split(/[\\/]/);
-  return parts.length === 2
-    && parts[0] === "notes"
-    && parts[1].endsWith(".md")
-    && parts.every((part) => part && part !== "." && part !== "..");
+  return (
+    parts.length === 2 &&
+    parts[0] === "notes" &&
+    parts[1].endsWith(".md") &&
+    parts.every((part) => part && part !== "." && part !== "..")
+  );
 }
 
-export async function findSiteSkill(siteId: string, options: any = {}): Promise<{ siteDir: string; manifest: LearningManifest }> {
+export async function findSiteSkill(
+  siteId: string,
+  options: any = {},
+): Promise<{ siteDir: string; manifest: LearningManifest }> {
   const root = options.root || siteSkillsRoot(options.agentWorkspace);
   for (const siteDir of await iterLearningDirs(root)) {
     const manifest = await loadLearningManifest(siteDir);
@@ -142,30 +140,50 @@ export async function findSiteSkill(siteId: string, options: any = {}): Promise<
   throw siteSkillNotFoundError(siteId, root);
 }
 
-export async function runNodeSiteTool(siteId, toolName, args: any = {}, ctx, options: any = {}) {
+export async function runNodeSiteTool(
+  siteId,
+  toolName,
+  args: any = {},
+  ctx,
+  options: any = {},
+) {
   const { siteDir, manifest } = await findSiteSkill(siteId, options);
   const schema = toolSchemas(manifest, "nodeTools")[toolName];
   if (!schema || typeof schema !== "object") {
-    throw new Error(`Node tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`);
+    throw new Error(
+      `Node tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`,
+    );
   }
   const toolPath = relativeSitePath(siteDir, schema.path, "Node tool");
-  const module = await import(`${pathToFileURL(toolPath).href}?t=${Date.now()}`);
+  const module = await import(
+    `${pathToFileURL(toolPath).href}?t=${Date.now()}`
+  );
   const callableName = schema.callable;
   if (typeof callableName !== "string" || !callableName.trim()) {
-    throw new Error(`Node tool ${JSON.stringify(toolName)} must declare a callable`);
+    throw new Error(
+      `Node tool ${JSON.stringify(toolName)} must declare a callable`,
+    );
   }
   const tool = module[callableName];
   if (typeof tool !== "function") {
-    throw new Error(`site skill ${JSON.stringify(siteId)} is missing Node callable ${JSON.stringify(callableName)}`);
+    throw new Error(
+      `site skill ${JSON.stringify(siteId)} is missing Node callable ${JSON.stringify(callableName)}`,
+    );
   }
   return tool(ctx, args || {});
 }
 
-export async function loadBrowserToolSource(siteId, toolName, options: any = {}) {
+export async function loadBrowserToolSource(
+  siteId,
+  toolName,
+  options: any = {},
+) {
   const { siteDir, manifest } = await findSiteSkill(siteId, options);
   const schema = toolSchemas(manifest, "browserTools")[toolName];
   if (!schema || typeof schema !== "object") {
-    throw new Error(`browser tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`);
+    throw new Error(
+      `browser tool ${JSON.stringify(toolName)} is not declared by site skill ${JSON.stringify(siteId)}`,
+    );
   }
   const toolPath = relativeSitePath(siteDir, schema.path, "browser tool");
   return readFile(toolPath, "utf8");
@@ -183,22 +201,30 @@ function siteSkillNotFoundError(siteId, searchedRoot) {
     `site skill not found: ${JSON.stringify(siteId)}`,
     `  searched: ${searchedRoot}`,
     `  EGO_BROWSER_AGENT_WORKSPACE: ${workspace}`,
-    `  hint: ensure your write path begins with the searched root above`
+    `  hint: ensure your write path begins with the searched root above`,
   ];
   return new Error(lines.join("\n"));
 }
 
 function toolSchemas(manifest, key) {
   const value = manifest[key] || {};
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { ...value }
+    : {};
 }
 
 function relativeSitePath(siteDir, manifestPath, label) {
   if (typeof manifestPath !== "string" || !manifestPath.trim()) {
     throw new Error(`${label} path must be a non-empty relative path`);
   }
-  if (manifestPath.includes("\\") || isAbsolute(manifestPath) || manifestPath.split("/").includes("..")) {
-    throw new Error(`${label} path must be relative to the site skill directory`);
+  if (
+    manifestPath.includes("\\") ||
+    isAbsolute(manifestPath) ||
+    manifestPath.split("/").includes("..")
+  ) {
+    throw new Error(
+      `${label} path must be relative to the site skill directory`,
+    );
   }
   const resolved = resolve(siteDir, manifestPath);
   const siteRoot = resolve(siteDir);

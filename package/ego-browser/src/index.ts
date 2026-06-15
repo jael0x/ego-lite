@@ -2,7 +2,11 @@
 import { pathToFileURL } from "node:url";
 
 import * as helpers from "./helpers.js";
-import { clearPreferredTarget, invalidateSession, setPreferredTarget } from "./browser-runtime.js";
+import {
+  clearPreferredTarget,
+  invalidateSession,
+  setPreferredTarget,
+} from "./browser-runtime.js";
 import { formatCliLogValue } from "./format.js";
 import { runMain } from "./run.js";
 
@@ -24,8 +28,14 @@ export * from "./helpers.js";
 export { runMain } from "./run.js";
 
 const SYNC_HELPERS = new Set(["help"]);
+// Marks an ego runtime whose mutating methods have already been wrapped, so a
+// second installEgoSdk call cannot double-wrap createTab / task-space methods.
+const EGO_WRAPPED = Symbol.for("egoBrowser.sdkWrapped");
 
-export function installEgoSdk(target: InstallTarget = globalThis, options: InstallEgoSdkOptions = {}) {
+export function installEgoSdk(
+  target: InstallTarget = globalThis,
+  options: InstallEgoSdkOptions = {},
+) {
   if (!target || typeof target !== "object") {
     return target;
   }
@@ -40,24 +50,47 @@ export function installEgoSdk(target: InstallTarget = globalThis, options: Insta
     if (typeof value !== "function") {
       continue;
     }
-    const exposed = SYNC_HELPERS.has(name) ? value : async (...args: unknown[]) => {
-      await readySignal;
-      if (readyError) {
-        throw readyError;
-      }
-      return value(...args);
-    };
-    Object.defineProperty(target, name, { value: exposed, writable: true, configurable: true, enumerable: false });
+    const exposed = SYNC_HELPERS.has(name)
+      ? value
+      : async (...args: unknown[]) => {
+          await readySignal;
+          if (readyError) {
+            throw readyError;
+          }
+          return value(...args);
+        };
+    Object.defineProperty(target, name, {
+      value: exposed,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
     installed[name] = exposed as HelperFunction;
   }
   const cliLogFn = options.cliLog || createCliLog();
-  Object.defineProperty(target, "cliLog", { value: cliLogFn, writable: true, configurable: true, enumerable: false });
+  Object.defineProperty(target, "cliLog", {
+    value: cliLogFn,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
   installed.cliLog = cliLogFn;
   if (target.ego && typeof target.ego === "object") {
     target.ego.helpers = installed;
     target.ego.learnings = {};
-    wrapCreateTab(target.ego);
-    wrapInvalidating(target.ego, ["useTaskSpace", "closeTaskSpace", "createTaskSpace"]);
+    if (!(target.ego as Record<symbol, unknown>)[EGO_WRAPPED]) {
+      wrapCreateTab(target.ego);
+      wrapInvalidating(target.ego, [
+        "useTaskSpace",
+        "closeTaskSpace",
+        "createTaskSpace",
+        "claimTaskSpace",
+      ]);
+      Object.defineProperty(target.ego, EGO_WRAPPED, {
+        value: true,
+        enumerable: false,
+      });
+    }
     exposeEgoMethods(target, target.ego);
   }
   return target;
@@ -74,14 +107,18 @@ if (isDirectCli()) {
   installEgoSdk();
 }
 
-function createCliLog(stream: { write(chunk: string): unknown } = process.stdout) {
+function createCliLog(
+  stream: { write(chunk: string): unknown } = process.stdout,
+) {
   return (...args: unknown[]) => {
     stream.write(`${args.map(formatCliLogValue).join(" ")}\n`);
   };
 }
 
 function isDirectCli() {
-  return process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+  return (
+    process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
+  );
 }
 
 function wrapInvalidating(ego: EgoRuntime, methodNames: string[]) {
@@ -125,13 +162,25 @@ function wrapCreateTab(ego: EgoRuntime) {
 }
 
 function exposeEgoMethods(target: InstallTarget, ego: EgoRuntime) {
-  const skip = new Set(["helpers", "learnings", "useTaskSpace", "createTaskSpace", "closeTaskSpace"]);
+  const skip = new Set([
+    "helpers",
+    "learnings",
+    "useTaskSpace",
+    "createTaskSpace",
+    "claimTaskSpace",
+    "closeTaskSpace",
+  ]);
   for (const key of Object.keys(ego)) {
     if (skip.has(key)) continue;
     if (key in target) continue;
     const value = ego[key];
     if (typeof value !== "function") continue;
     const bound = value.bind(ego);
-    Object.defineProperty(target, key, { value: bound, writable: true, configurable: true, enumerable: false });
+    Object.defineProperty(target, key, {
+      value: bound,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
   }
 }

@@ -1,9 +1,24 @@
-import { browserEgo, invalidateSession, setPreferredTarget } from "../browser-runtime.js";
+import {
+  browserEgo,
+  clearPreferredTarget,
+  ensureSession,
+  invalidateSession,
+  isBrowserRuntime,
+  pendingDialog,
+  setPreferredTarget,
+} from "../browser-runtime.js";
 import { cdp, js } from "../cdp-eval.js";
+import { assertNoEgoError } from "../ego-errors.js";
 import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
 
-export const INTERNAL_URL_PREFIXES = ["chrome://", "chrome-untrusted://", "devtools://", "chrome-extension://", "about:"];
+export const INTERNAL_URL_PREFIXES = [
+  "chrome://",
+  "chrome-untrusted://",
+  "devtools://",
+  "chrome-extension://",
+  "about:",
+];
 
 type TabInfo = {
   targetId: string;
@@ -32,6 +47,8 @@ type OpenOrReuseTabOptions = {
   settle?: number;
 };
 
+type TabTarget = string | { targetId: string };
+
 /**
  * Navigate the current tab to a URL using CDP Page.navigate.
  * @param {string} url Absolute or browser-supported URL to load.
@@ -47,9 +64,15 @@ export async function gotoUrl(url) {
  * @param {{timeout?: number, settle?: number, wait?: boolean}} [options]
  * @returns {Promise<{navigation: object, loaded: boolean}>}
  */
-export async function gotoAndWait(url: string, options: GotoAndWaitOptions = {}) {
+export async function gotoAndWait(
+  url: string,
+  options: GotoAndWaitOptions = {},
+) {
   const navigation = await gotoUrl(url);
-  const loaded = options.wait === false ? false : await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
+  const loaded =
+    options.wait === false
+      ? false
+      : await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {
     await state.sleep(settle * 1000);
@@ -59,10 +82,18 @@ export async function gotoAndWait(url: string, options: GotoAndWaitOptions = {})
 
 /**
  * Read basic state for the current page.
- * @returns {Promise<{url:string,title:string,w:number,h:number,sx:number,sy:number,pw:number,ph:number}>}
+ * @returns {Promise<{url:string,title:string,w:number,h:number,sx:number,sy:number,pw:number,ph:number}|{dialog:object}>}
  */
 export async function pageInfo() {
-  const expression = "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
+  if (isBrowserRuntime()) {
+    await ensureSession();
+    const dialog = pendingDialog();
+    if (dialog) {
+      return { dialog };
+    }
+  }
+  const expression =
+    "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
   return JSON.parse(await js(expression));
 }
 
@@ -71,13 +102,27 @@ export async function pageInfo() {
  * @param {{includeChrome?: boolean}} [options]
  * @returns {Promise<Array<{targetId:string,title:string,url:string}>>}
  */
-export async function listTabs(options: ListTabsOptions = {}): Promise<TabInfo[]> {
+export async function listTabs(
+  options: ListTabsOptions = {},
+): Promise<TabInfo[]> {
   const includeChrome = options.includeChrome ?? true;
-  const result = await browserEgo().listTabs();
+  const result = assertNoEgoError(await browserEgo().listTabs(), "listTabs");
   const tabs = result.tabs || [];
   return tabs
-    .filter((tab) => includeChrome || !INTERNAL_URL_PREFIXES.some((prefix) => (tab.url || "").startsWith(prefix)))
-    .map((tab) => ({ targetId: tab.targetId, title: tab.title || "", url: tab.url || "", active: Boolean(tab.active), index: tab.index }));
+    .filter(
+      (tab) =>
+        includeChrome ||
+        !INTERNAL_URL_PREFIXES.some((prefix) =>
+          (tab.url || "").startsWith(prefix),
+        ),
+    )
+    .map((tab) => ({
+      targetId: tab.targetId,
+      title: tab.title || "",
+      url: tab.url || "",
+      active: Boolean(tab.active),
+      index: tab.index,
+    }));
 }
 
 /**
@@ -112,7 +157,10 @@ export async function switchTab(target: string | { targetId: string }) {
  * @returns {Promise<string>} New target id.
  */
 export async function newTab(url = "about:blank") {
-  const result = await browserEgo().createTab(url);
+  const result = assertNoEgoError(await browserEgo().createTab(url), "newTab");
+  if (!result.targetId) {
+    throw new Error("newTab returned no targetId");
+  }
   return result.targetId;
 }
 
@@ -122,7 +170,10 @@ export async function newTab(url = "about:blank") {
  * @param {{match?: "exact"|"origin"|"origin+path"|"includes", wait?: boolean, timeout?: number, settle?: number}} [options]
  * @returns {Promise<{targetId:string,url:string,title:string,active:boolean,index?:number,reused:boolean}>}
  */
-export async function openOrReuseTab(url: string, options: OpenOrReuseTabOptions = {}) {
+export async function openOrReuseTab(
+  url: string,
+  options: OpenOrReuseTabOptions = {},
+) {
   const tabs = await listTabs({ includeChrome: false });
   const match = options.match || "exact";
   const existing = tabs.find((tab) => tabMatchesUrl(tab.url, url, match));
@@ -149,6 +200,29 @@ export async function openOrReuseTab(url: string, options: OpenOrReuseTabOptions
 }
 
 /**
+ * Close a browser tab by target id, tab object, or the current tab when omitted.
+ * @param {string|{targetId:string}} [target] Target id or tab-like object. Defaults to the current tab.
+ * @returns {Promise<string>} Closed target id.
+ */
+export async function closeTab(target: TabTarget | undefined = undefined) {
+  const targetId =
+    target === undefined
+      ? (await currentTab()).targetId
+      : typeof target === "object"
+        ? target.targetId
+        : target;
+  if (!targetId) {
+    throw new Error("closeTab requires a targetId");
+  }
+  await cdp("Target.closeTarget", { targetId });
+  invalidateSession();
+  if (state.preferredTargetId === targetId) {
+    clearPreferredTarget();
+  }
+  return targetId;
+}
+
+/**
  * Ensure the active harness session points at a real, non-internal page tab.
  * @returns {Promise<{targetId:string,title:string,url:string}|null>}
  */
@@ -158,7 +232,10 @@ export async function ensureRealTab() {
     return null;
   }
   const current = await currentTab().catch(() => null);
-  if (current?.url && !INTERNAL_URL_PREFIXES.some((prefix) => current.url.startsWith(prefix))) {
+  if (
+    current?.url &&
+    !INTERNAL_URL_PREFIXES.some((prefix) => current.url.startsWith(prefix))
+  ) {
     return current;
   }
   await switchTab(tabs[0].targetId);
@@ -172,7 +249,12 @@ export async function ensureRealTab() {
  */
 export async function iframeTarget(urlSubstring) {
   const targets = (await cdp("Target.getTargets")).targetInfos || [];
-  return targets.find((target) => target.type === "iframe" && (target.url || "").includes(urlSubstring))?.targetId || null;
+  return (
+    targets.find(
+      (target) =>
+        target.type === "iframe" && (target.url || "").includes(urlSubstring),
+    )?.targetId || null
+  );
 }
 
 function tabMatchesUrl(tabUrl: string, wantedUrl: string, match: UrlMatchMode) {
@@ -194,7 +276,10 @@ function tabMatchesUrl(tabUrl: string, wantedUrl: string, match: UrlMatchMode) {
     return tab.origin === wanted.origin;
   }
   if (match === "origin+path") {
-    return tab.origin === wanted.origin && trimSlash(tab.pathname) === trimSlash(wanted.pathname);
+    return (
+      tab.origin === wanted.origin &&
+      trimSlash(tab.pathname) === trimSlash(wanted.pathname)
+    );
   }
   return tab.href === wanted.href;
 }

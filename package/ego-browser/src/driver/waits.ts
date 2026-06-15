@@ -39,11 +39,15 @@ export async function waitForLoad(options: WaitForLoadOptions = {}) {
  * @param {{timeout?: number, visible?: boolean}} [options]
  * @returns {Promise<boolean>} True when found before timeout.
  */
-export async function waitForElement(selector: string, options: WaitForElementOptions = {}) {
+export async function waitForElement(
+  selector: string,
+  options: WaitForElementOptions = {},
+) {
   const timeout = options.timeout ?? 10.0;
   const visible = options.visible ?? false;
   const deadline = state.now() + timeout * 1000;
-  const visibilityFn = "function(){if(typeof this.checkVisibility==='function')return this.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});const s=getComputedStyle(this);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}";
+  const visibilityFn =
+    "function(){if(typeof this.checkVisibility==='function')return this.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});const s=getComputedStyle(this);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}";
   while (state.now() < deadline) {
     let handle;
     try {
@@ -57,12 +61,16 @@ export async function waitForElement(selector: string, options: WaitForElementOp
     }
     try {
       if (!visible) return true;
-      const response = await cdp("Runtime.callFunctionOn", {
-        functionDeclaration: visibilityFn,
-        objectId: handle.objectId,
-        returnByValue: true,
-        awaitPromise: false
-      }, handle.sessionId);
+      const response = await cdp(
+        "Runtime.callFunctionOn",
+        {
+          functionDeclaration: visibilityFn,
+          objectId: handle.objectId,
+          returnByValue: true,
+          awaitPromise: false,
+        },
+        handle.sessionId,
+      );
       if (response.result?.value) return true;
     } catch {
       // visibility check failed (element raced away); treat as not-ready, keep polling.
@@ -76,33 +84,56 @@ export async function waitForElement(selector: string, options: WaitForElementOp
 
 /**
  * Wait until network events are idle.
+ * Enables the CDP Network domain for the duration of the wait so that network
+ * events are actually delivered (previously nothing enabled the domain, so this
+ * could report "idle" without ever observing traffic). If the caller had
+ * already enabled the domain, it is left enabled on return. Best-effort: if
+ * the runtime does not deliver Network events, an idle window of idleMs still
+ * resolves true.
  * @param {{timeout?: number, idleMs?: number}} [options]
  * @returns {Promise<boolean>} True when idle before timeout.
  */
-export async function waitForNetworkIdle(options: WaitForNetworkIdleOptions = {}) {
+export async function waitForNetworkIdle(
+  options: WaitForNetworkIdleOptions = {},
+) {
   const timeout = options.timeout ?? 10.0;
   const idleMs = options.idleMs ?? 500;
   const deadline = state.now() + timeout * 1000;
   let lastActivity = state.now();
   const inflight = new Set();
-  while (state.now() < deadline) {
-    for (const event of await drainEvents()) {
-      const method = event.method || "";
-      const params = event.params || {};
-      if (method === "Network.requestWillBeSent") {
-        inflight.add(params.requestId);
-        lastActivity = state.now();
-      } else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") {
-        inflight.delete(params.requestId);
-        lastActivity = state.now();
-      } else if (method.startsWith("Network.")) {
-        lastActivity = state.now();
+  const ownsNetworkDomain = !state.networkDomainEnabled;
+  await cdp("Network.enable").catch(() => {
+    // Domain may be unsupported by the bridge; fall back to passive observation.
+  });
+  try {
+    while (state.now() < deadline) {
+      for (const event of await drainEvents()) {
+        const method = event.method || "";
+        const params = event.params || {};
+        if (method === "Network.requestWillBeSent") {
+          inflight.add(params.requestId);
+          lastActivity = state.now();
+        } else if (
+          method === "Network.loadingFinished" ||
+          method === "Network.loadingFailed"
+        ) {
+          inflight.delete(params.requestId);
+          lastActivity = state.now();
+        } else if (method.startsWith("Network.")) {
+          lastActivity = state.now();
+        }
       }
+      if (inflight.size === 0 && state.now() - lastActivity >= idleMs) {
+        return true;
+      }
+      await state.sleep(100);
     }
-    if (inflight.size === 0 && state.now() - lastActivity >= idleMs) {
-      return true;
+    return false;
+  } finally {
+    if (ownsNetworkDomain) {
+      await cdp("Network.disable").catch(() => {
+        // Best-effort cleanup; keeps the event buffer from accumulating after the wait.
+      });
     }
-    await state.sleep(100);
   }
-  return false;
 }

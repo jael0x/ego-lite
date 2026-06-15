@@ -2,13 +2,22 @@ import { state } from "./state.js";
 
 const RESPONSE_TIMEOUT_MS = 15000;
 const SESSION_TTL_MS = 2000;
-const SESSION_LOST = /Session (?:with given id )?not found|Target closed|No session/i;
-const BROWSER_LEVEL = (method) => method.startsWith("Target.") || method.startsWith("Browser.");
+// Upper bound for buffered CDP events. The runtime can be long-lived (installEgoSdk
+// inside the browser); without a cap, undrained events grow without bound.
+const MAX_BUFFERED_EVENTS = 10000;
+const SESSION_LOST =
+  /Session (?:with given id )?not found|Target closed|No session/i;
+const BROWSER_LEVEL = (method) =>
+  method.startsWith("Target.") || method.startsWith("Browser.");
 let nextMessageId = 1;
 const pending = new Map();
 const events = [];
+const pageEnabledSessions = new Set();
+const pendingDialogs = new Map();
 export function isBrowserRuntime() {
-  return Boolean(globalThis.ego && typeof globalThis.ego.sendCDPMessage === "function");
+  return Boolean(
+    globalThis.ego && typeof globalThis.ego.sendCDPMessage === "function",
+  );
 }
 
 export function browserEgo() {
@@ -18,11 +27,21 @@ export function browserEgo() {
   return globalThis.ego;
 }
 
-function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RESPONSE_TIMEOUT_MS) {
+function rawCdp(
+  method,
+  params: any = {},
+  sessionId = undefined,
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+) {
   const runtime = browserEgo();
   runtime.onCDPMessage = handleMessage;
   const id = nextMessageId++;
-  const payload = JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) });
+  const payload = JSON.stringify({
+    id,
+    method,
+    params,
+    ...(sessionId ? { sessionId } : {}),
+  });
   return new Promise<any>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
@@ -36,7 +55,7 @@ function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RES
       reject: (error) => {
         clearTimeout(timer);
         reject(error);
-      }
+      },
     });
     try {
       runtime.sendCDPMessage(payload);
@@ -48,7 +67,12 @@ function rawCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RES
   });
 }
 
-export async function browserCdp(method, params: any = {}, sessionId = undefined, timeoutMs = RESPONSE_TIMEOUT_MS) {
+export async function browserCdp(
+  method,
+  params: any = {},
+  sessionId = undefined,
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+) {
   // Test mock: cdpOverride bypasses everything including session injection.
   if (state.cdpOverride) {
     return state.cdpOverride(method, params, sessionId);
@@ -88,16 +112,22 @@ export async function ensureSession() {
       const preferred = state.preferredTargetId
         ? tabs.find((t) => t.targetId === state.preferredTargetId)
         : null;
-      const active = preferred || tabs.find((t) => t.active) || tabs[tabs.length - 1];
+      const active =
+        preferred || tabs.find((t) => t.active) || tabs[tabs.length - 1];
       if (!active) {
         throw new Error("no active tab to attach session");
       }
       const targetId = active.targetId;
       if (targetId !== state.sessionTargetId || !state.sessionId) {
-        const attached = await rawCdp("Target.attachToTarget", { targetId, flatten: true }, undefined);
+        const attached = await rawCdp(
+          "Target.attachToTarget",
+          { targetId, flatten: true },
+          undefined,
+        );
         state.sessionId = attached.result?.sessionId || attached.sessionId;
         state.sessionTargetId = targetId;
       }
+      await enablePageEvents(state.sessionId);
       state.sessionAt = Date.now();
       return state.sessionId;
     } finally {
@@ -108,6 +138,10 @@ export async function ensureSession() {
 }
 
 export function invalidateSession() {
+  if (state.sessionId) {
+    pageEnabledSessions.delete(state.sessionId);
+    pendingDialogs.delete(state.sessionId);
+  }
   state.sessionId = null;
   state.sessionTargetId = null;
   state.sessionAt = 0;
@@ -124,6 +158,26 @@ export function clearPreferredTarget() {
 export function drainBrowserEvents() {
   const out = events.splice(0, events.length);
   return out;
+}
+
+export function pendingDialog(sessionId = state.sessionId) {
+  if (sessionId && pendingDialogs.has(sessionId)) {
+    return { ...pendingDialogs.get(sessionId) };
+  }
+  return null;
+}
+
+async function enablePageEvents(sessionId) {
+  if (!sessionId || pageEnabledSessions.has(sessionId)) {
+    return;
+  }
+  try {
+    await rawCdp("Page.enable", {}, sessionId);
+    pageEnabledSessions.add(sessionId);
+  } catch {
+    // Dialog tracking is best-effort. Do not make all helpers fail on targets
+    // that reject Page.enable, such as unusual internal pages.
+  }
 }
 
 function handleMessage(message) {
@@ -146,13 +200,35 @@ function handleMessage(message) {
     entry.resolve(data);
     return;
   }
-  if (data.method === "Target.detachedFromTarget" || data.method === "Target.targetDestroyed") {
+  if (
+    data.method === "Target.detachedFromTarget" ||
+    data.method === "Target.targetDestroyed"
+  ) {
+    const sessionId = data.params?.sessionId || data.sessionId;
+    if (sessionId) {
+      pageEnabledSessions.delete(sessionId);
+      pendingDialogs.delete(sessionId);
+    }
     const targetId = data.params?.targetId || data.params?.targetInfo?.targetId;
     if (targetId && targetId === state.sessionTargetId) {
       invalidateSession();
     }
   }
+  if (data.method === "Page.javascriptDialogOpening") {
+    const sessionId = data.sessionId || state.sessionId;
+    if (sessionId) {
+      pendingDialogs.set(sessionId, data.params || {});
+    }
+  } else if (data.method === "Page.javascriptDialogClosed") {
+    const sessionId = data.sessionId || state.sessionId;
+    if (sessionId) {
+      pendingDialogs.delete(sessionId);
+    }
+  }
   events.push(data);
+  if (events.length > MAX_BUFFERED_EVENTS) {
+    events.splice(0, events.length - MAX_BUFFERED_EVENTS);
+  }
 }
 
 export function browserSnapshotRefsToRefMap(refMap, refs = []) {
@@ -164,6 +240,12 @@ export function browserSnapshotRefsToRefMap(refMap, refs = []) {
     if (ref.backendNodeId === undefined || ref.backendNodeId === null) {
       continue;
     }
-    refMap.add(String(ref.backendNodeId), ref.backendNodeId, ref.role, ref.name, undefined);
+    refMap.add(
+      String(ref.backendNodeId),
+      ref.backendNodeId,
+      ref.role,
+      ref.name,
+      undefined,
+    );
   }
 }

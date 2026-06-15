@@ -1,4 +1,8 @@
-import { stdin as processStdin, stdout as processStdout, stderr as processStderr } from "node:process";
+import {
+  stdin as processStdin,
+  stdout as processStdout,
+  stderr as processStderr,
+} from "node:process";
 
 import { formatCliLogValue } from "./format.js";
 import * as helpers from "./helpers.js";
@@ -62,7 +66,7 @@ export async function runMain(options: RunMainOptions = {}) {
     resetConnection: async () => {},
     printUpdateBanner: () => {},
     runDoctor: async () => 0,
-    ...options.services
+    ...options.services,
   };
 
   if (argv[0] === "-h" || argv[0] === "--help") {
@@ -86,7 +90,10 @@ export async function runMain(options: RunMainOptions = {}) {
     return 2;
   }
 
-  const code = options.stdinText !== undefined ? options.stdinText : await readAll(options.stdin || processStdin);
+  const code =
+    options.stdinText !== undefined
+      ? options.stdinText
+      : await readAll(options.stdin || processStdin);
   if (!code.trim()) {
     write(stderr, USAGE);
     return 2;
@@ -109,22 +116,14 @@ async function execute(code: string, stdout: WritableLike) {
 
 export async function executionContext(stdout: WritableLike = processStdout) {
   const agentHelpers = await helpers.loadAgentHelpers();
-  const context = publicContext({ ...helpers, ...agentHelpers });
-  context.cliLog = (...args) => {
+  // Single source of truth for the agent-facing surface: the same helperContext()
+  // that installEgoSdk() exposes in the browser runtime, so the CLI and SDK paths
+  // cannot drift apart (and `help` exists in both).
+  const context: Record<string, any> = helpers.helperContext(agentHelpers);
+  context.cliLog = (...args: unknown[]) => {
     write(stdout, `${args.map(formatCliLogValue).join(" ")}\n`);
   };
   return context;
-}
-
-function publicContext(moduleLike: Record<string, any>) {
-  const out: Record<string, any> = {};
-  for (const [name, value] of Object.entries(moduleLike)) {
-    if (name === "__testing" || name.startsWith("_")) {
-      continue;
-    }
-    out[name] = value;
-  }
-  return out;
 }
 
 function readAll(stream: ReadableLike) {
