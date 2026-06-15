@@ -61,7 +61,7 @@ A task often takes multiple heredoc rounds to complete. Because the Node.js runt
 
 `nameOrId` can be a task space name, numeric id, or digit-only numeric id string. String values match `name`/`taskId` first, then digit-only strings fall back to numeric id. Number values match existing numeric ids only; if no matching id exists, `useOrCreateTaskSpace` fails instead of creating a new space.
 
-Use a short name for the current user goal when creating a new task space. Reuse the same name while the user is continuing that goal; choose a new name only when the user starts a separate goal. Prefer using the numeric `id` returned by `useOrCreateTaskSpace` (for example, `task.id`) to resume a known task in later rounds and avoid name collisions.
+Use a short name for the active user goal when creating a new task space. Keep reusing that task space for follow-up questions, corrections, refinements, re-checks, and result validation, even if you previously thought the task was complete. Choose a new task space only when the user clearly starts a separate, unrelated goal. Prefer using the numeric `id` returned by `useOrCreateTaskSpace` (for example, `task.id`) to resume a known task in later rounds and avoid name collisions.
 
 To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await useOrCreateTaskSpace(id)` to claim it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
 
