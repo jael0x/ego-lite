@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { agentWorkspace } from "../env.js";
 
+export type LearningOptions = { root?: string; agentWorkspace?: string };
+
 export interface ToolArgSchema {
   type: string;
   required: boolean;
@@ -39,14 +41,28 @@ export interface LearningEntry {
   browserTools: Record<string, ToolSchema>;
 }
 
-export interface LearnedContext {
-  exists: boolean;
-  siteId: string | null;
-  siteName: string | null;
-  domain: string;
-  knowledge: LearnedKnowledgeNote[];
-  tools: LearnedToolSignature[];
-}
+/**
+ * Discriminated on `exists`: a no-match carries no site identity or content,
+ * a match always carries a non-null siteId/siteName. Both variants keep
+ * `knowledge`/`tools` so callers can read them without first narrowing.
+ */
+export type LearnedContext =
+  | {
+      exists: false;
+      siteId: null;
+      siteName: null;
+      domain: string;
+      knowledge: LearnedKnowledgeNote[];
+      tools: LearnedToolSignature[];
+    }
+  | {
+      exists: true;
+      siteId: string;
+      siteName: string;
+      domain: string;
+      knowledge: LearnedKnowledgeNote[];
+      tools: LearnedToolSignature[];
+    };
 
 export interface LearnedKnowledgeNote {
   siteId: string;
@@ -102,19 +118,28 @@ export async function checkLearningExists(
   };
 }
 
-export async function siteSkillsForUrl(url, options: any = {}) {
+export async function siteSkillsForUrl(
+  url: string,
+  options: LearningOptions = {},
+): Promise<LearningEntry[]> {
   const hostname = urlHostname(url);
   if (!hostname) {
     return [];
   }
   const root =
     options.root || learningsRoot(options.agentWorkspace || agentWorkspace());
-  const matches = [];
+  const matches: LearningEntry[] = [];
   for (const siteDir of await iterLearningDirs(root)) {
-    let manifest;
+    let manifest: LearningManifest;
     try {
       manifest = await loadLearningManifest(siteDir);
-    } catch {
+    } catch (error) {
+      // Surface the malformed manifest rather than silently dropping the site;
+      // keep scanning so one bad pack doesn't hide the others.
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[ego-browser] skipping site skill in ${siteDir}: ${message}\n`,
+      );
       continue;
     }
     const domains = Array.isArray(manifest.domains) ? manifest.domains : [];
@@ -150,8 +175,9 @@ export async function loadLearningManifest(
   try {
     parsed = JSON.parse(await readFile(join(siteDir, "manifest.json"), "utf8"));
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `site skill ${JSON.stringify(siteDir)} has invalid or missing manifest.json: ${error.message}`,
+      `site skill ${JSON.stringify(siteDir)} has invalid or missing manifest.json: ${message}`,
     );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -167,9 +193,10 @@ export function learningEntry(
   manifest: LearningManifest,
 ): LearningEntry {
   const notes = Array.isArray(manifest.notes) ? manifest.notes : [];
+  const dirName = siteDir.split(/[\\/]/).at(-1) || "";
   return {
-    id: manifest.id || siteDir.split(/[\\/]/).at(-1),
-    name: manifest.name || manifest.id || siteDir.split(/[\\/]/).at(-1),
+    id: manifest.id || dirName,
+    name: manifest.name || manifest.id || dirName,
     path: siteDir,
     domains: Array.isArray(manifest.domains) ? [...manifest.domains] : [],
     notes: notes.map((note) => join(siteDir, note)),
@@ -187,7 +214,7 @@ export async function pathExists(path: string) {
   }
 }
 
-export function urlHostname(url) {
+export function urlHostname(url: string) {
   try {
     const parsed = String(url).includes("://")
       ? new URL(String(url))
@@ -198,7 +225,7 @@ export function urlHostname(url) {
   }
 }
 
-function domainMatches(hostname, pattern) {
+function domainMatches(hostname: string, pattern: string) {
   const normalized = String(pattern || "")
     .toLowerCase()
     .replace(/\.$/, "");
