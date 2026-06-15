@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { setOverrides, state } from "./state.js";
-import { assertNoEgoError } from "./ego-errors.js";
+import { assertNoEgoError, isEgoUserControlError } from "./ego-errors.js";
 import { help as helpRuntime, formatHelp } from "./help-runtime.js";
 import { cdp, decodeUnserializableJsValue, js } from "./cdp-eval.js";
 import * as pointer from "./driver/pointer.js";
@@ -303,11 +303,6 @@ export async function takeOverTaskSpace(nameOrId?: string | number) {
   assertNoEgoError(await ego.takeOverTaskSpace(), "takeOverTaskSpace");
 }
 
-function isUserControlError(err: unknown) {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  return /user control|user is controlling/i.test(message);
-}
-
 /**
  * Probe whether the agent currently holds control of the active task space.
  * Module-private; used by waitForAgentControl. Uses ego.snapshot, which
@@ -323,7 +318,7 @@ async function probeAgentControl() {
     await ego.snapshot({ maxResultLength: 1 });
     return true;
   } catch (err) {
-    if (isUserControlError(err)) return false;
+    if (isEgoUserControlError(err)) return false;
     throw err;
   }
 }
