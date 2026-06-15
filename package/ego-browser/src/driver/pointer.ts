@@ -2,6 +2,7 @@ import { cdp, js } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { elementCenter } from "./observe.js";
 import { resolveAndCall } from "./element-ops.js";
+import { CDP } from "../constants.js";
 
 type MouseButton = "left" | "middle" | "right";
 type Point = {
@@ -121,7 +122,7 @@ export async function hover(target: MouseTarget, options: HoverOptions = {}) {
   const point = await resolveMouseTarget(target);
   maybeHighlight(point, options.label);
   await cdp(
-    "Input.dispatchMouseEvent",
+    CDP.inputDispatchMouseEvent,
     {
       type: "mouseMoved",
       x: point.x,
@@ -151,11 +152,12 @@ export async function dragMouse(
   }
   const button = options.button || "left";
   const buttons = pressedButtons(button);
+  const delayMs = options.delayMs ?? 0;
   const first = resolved[0];
-  const last = resolved.at(-1);
+  const last = resolved[resolved.length - 1];
   maybeHighlight(first, options.label);
   await cdp(
-    "Input.dispatchMouseEvent",
+    CDP.inputDispatchMouseEvent,
     {
       type: "mousePressed",
       x: first.x,
@@ -169,7 +171,7 @@ export async function dragMouse(
   for (let i = 1; i < resolved.length; i += 1) {
     const point = resolved[i];
     await cdp(
-      "Input.dispatchMouseEvent",
+      CDP.inputDispatchMouseEvent,
       {
         type: "mouseMoved",
         x: point.x,
@@ -179,12 +181,12 @@ export async function dragMouse(
       },
       point.sessionId ?? first.sessionId,
     );
-    if (options.delayMs > 0 && i < resolved.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    if (delayMs > 0 && i < resolved.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
   await cdp(
-    "Input.dispatchMouseEvent",
+    CDP.inputDispatchMouseEvent,
     {
       type: "mouseReleased",
       x: last.x,
@@ -229,7 +231,7 @@ export async function scroll(
     deltaY: options.dy ?? 300,
   };
   try {
-    await browserCdp("Input.dispatchMouseEvent", params, undefined, 1000);
+    await browserCdp(CDP.inputDispatchMouseEvent, params, undefined, 1000);
   } catch (error) {
     // Degrade to DOM scrolling only when the target genuinely cannot dispatch
     // wheel events. Everything else (timeouts, "user is controlling", session
@@ -329,7 +331,7 @@ export async function scrollToBottomUntil(
 }
 
 function maybeHighlight(point: Point, label?: string) {
-  const ego = (globalThis as any).ego;
+  const ego = globalThis.ego;
   if (!ego) return;
   ego.animationHighlightMouseToPosition?.(point.x, point.y);
   if (label) {
@@ -343,7 +345,7 @@ async function dispatchMouse(
   options: MouseEventOptions = {},
 ) {
   await cdp(
-    "Input.dispatchMouseEvent",
+    CDP.inputDispatchMouseEvent,
     {
       type,
       x: point.x,
@@ -468,6 +470,9 @@ async function conditionMet(
     return Boolean(await condition(state));
   }
   if (typeof condition === "string") {
+    // Trust boundary: a string condition is a caller-supplied JS expression
+    // evaluated with full page authority, by design. Callers are the local
+    // operator's own scripts; prefer the function form for any dynamic value.
     return Boolean(await js(`Boolean(${condition})`));
   }
   throw new TypeError(
