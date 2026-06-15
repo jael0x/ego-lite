@@ -4,7 +4,7 @@ import {
   stderr as processStderr,
 } from "node:process";
 
-import { formatCliLogValue } from "./format.js";
+import { createCliLog } from "./format.js";
 import * as helpers from "./helpers.js";
 
 type WritableLike = {
@@ -119,10 +119,8 @@ export async function executionContext(stdout: WritableLike = processStdout) {
   // Single source of truth for the agent-facing surface: the same helperContext()
   // that installEgoSdk() exposes in the browser runtime, so the CLI and SDK paths
   // cannot drift apart (and `help` exists in both).
-  const context: Record<string, any> = helpers.helperContext(agentHelpers);
-  context.cliLog = (...args: unknown[]) => {
-    write(stdout, `${args.map(formatCliLogValue).join(" ")}\n`);
-  };
+  const context: Record<string, unknown> = helpers.helperContext(agentHelpers);
+  context.cliLog = createCliLog(stdout);
   return context;
 }
 
